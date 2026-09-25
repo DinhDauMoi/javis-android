@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#00E5FF</color>
+    <color name="primary_dark">#00B0FF</color>
+    <color name="primary_glow">#3300E5FF</color>
+    <color name="accent">#7C4DFF</color>
+    
+    <color name="bg_dark">#0A0E1A</color>
+    <color name="bg_card">#131B2E</color>
+    <color name="bg_card_stroke">#243354</color>
+    <color name="bg_card_transparent">#D9131B2E</color>
+    
+    <color name="text_primary">#F1F5F9</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+    <color name="text_cyan">#00E5FF</color>
+    
+    <color name="status_green">#10B981</color>
+    <color name="status_green_bg">#2010B981</color>
+    <color name="status_red">#EF4444</color>
+    <color name="status_red_bg">#20EF4444</color>
+    <color name="status_orange">#F59E0B</color>
+    <color name="status_orange_bg">#20F59E0B</color>
+    
+    <color name="msg_user_bg">#1E3A8A</color>
+    <color name="msg_bot_bg">#1E293B</color>
+    <color name="msg_bot_stroke">#334155</color>
+    
+    <color name="mic_idle">#00E5FF</color>
+    <color name="mic_listening">#EF4444</color>
+    <color name="mic_processing">#F59E0B</color>
+</resources>

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JAVIS</string>
+    <string name="app_tagline">Trợ lý AI điều khiển giọng nói</string>
+    
+    <!-- Accessibility -->
+    <string name="accessibility_service_label">JAVIS - Dịch vụ Trợ năng Điều khiển</string>
+    <string name="accessibility_service_description">Cho phép JAVIS thực hiện các thao tác tự động như lướt TikTok/YouTube, bấm nút, quay lại và điều khiển thiết bị bằng giọng nói tiếng Việt.</string>
+    <string name="accessibility_not_enabled_title">Chưa bật Trợ năng</string>
+    <string name="accessibility_not_enabled_msg">Vui lòng vào Cài đặt → Trợ năng → Bật JAVIS để thực hiện lệnh điều khiển màn hình.</string>
+    <string name="open_accessibility_settings">Mở Cài đặt Trợ năng</string>
+    
+    <!-- Tile -->
+    <string name="tile_label">JAVIS Voice</string>
+    
+    <!-- UI Strings -->
+    <string name="status_ready">Sẵn sàng nghe lệnh...</string>
+    <string name="status_listening">Đang lắng nghe... Nói đi bạn!</string>
+    <string name="status_processing">Đang xử lý câu lệnh...</string>
+    <string name="status_speaking">Đang phản hồi...</string>
+    
+    <string name="btn_listen">NÓI LỆNH</string>
+    <string name="hint_input">Hoặc nhập câu lệnh tại đây...</string>
+    
+    <string name="badge_accessibility_on">Trợ năng: BẬT</string>
+    <string name="badge_accessibility_off">Trợ năng: TẮT (Chạm để bật)</string>
+    <string name="badge_overlay_on">Nút nổi: BẬT</string>
+    <string name="badge_overlay_off">Nút nổi: TẮT</string>
+    
+    <!-- Settings -->
+    <string name="title_settings">Cài đặt JAVIS</string>
+    <string name="section_ai_config">Cấu hình AI (OpenAI Compatible)</string>
+    <string name="label_api_key">API Key</string>
+    <string name="hint_api_key">sk-...</string>
+    <string name="label_base_url">Base URL</string>
+    <string name="hint_base_url">https://api.openai.com/v1</string>
+    <string name="label_model">Model name</string>
+    <string name="hint_model">gpt-4o-mini hoặc tên model tương thích</string>
+    
+    <string name="section_wakeword">Từ khóa đánh thức (Wake Word)</string>
+    <string name="enable_wakeword">Bật lắng nghe từ khóa "Hey Javis"</string>
+    <string name="desc_wakeword">Tính năng chạy ngầm Porcupine Picovoice (Mặc định: TẮT)</string>
+    <string name="label_picovoice_key">Picovoice AccessKey (Nếu dùng)</string>
+    
+    <string name="section_floating">Nút Micro Nổi (Overlay)</string>
+    <string name="enable_floating_button">Hiển thị nút mic nổi trên mọi ứng dụng</string>
+    <string name="desc_floating_button">Dễ dàng bấm nói khi đang lướt TikTok, Facebook mà không cần rời màn hình</string>
+    
+    <string name="section_custom_commands">Lệnh tùy chỉnh của bạn</string>
+    <string name="btn_add_command">Thêm lệnh mới</string>
+    <string name="empty_custom_commands">Chưa có lệnh tùy chỉnh nào. Bấm nút phía trên để tạo!</string>
+    <string name="btn_save">Lưu cấu hình</string>
+    <string name="settings_saved">Đã lưu cài đặt thành công!</string>
+    
+    <!-- Custom Command Dialog -->
+    <string name="dialog_add_title">Thêm lệnh tùy chỉnh</string>
+    <string name="dialog_cmd_phrase">Câu lệnh (Ví dụ: "lướt video tiếp")</string>
+    <string name="dialog_cmd_type">Loại hành động</string>
+    <string name="dialog_cmd_param">Tham số (Package / URL / Tên nút)</string>
+    
+    <!-- Permissions -->
+    <string name="permission_audio_rationale">JAVIS cần quyền ghi âm để nhận diện giọng nói tiếng Việt của bạn.</string>
+    <string name="permission_contacts_rationale">JAVIS cần quyền đọc danh bạ để hỗ trợ tìm tên người muốn gọi điện.</string>
+    <string name="grant_permission">Cấp quyền</string>
+</resources>
