@@ -20,20 +20,42 @@ import java.util.Locale
 object AppHelper {
 
     // Bảng map tên gọi thông dụng sang Package Name
+    // Hỗ trợ cả tên có dấu và không dấu (normalized bởi TextNormalizer.removeAccents)
     private val POPULAR_APPS = mapOf(
-        "tiktok" to listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill"),
-        "tik tok" to listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill"),
-        "youtube" to listOf("com.google.android.youtube"),
-        "zalo" to listOf("com.zing.zalo"),
-        "facebook" to listOf("com.facebook.katana"),
-        "fb" to listOf("com.facebook.katana"),
+        // TikTok — package chính thức: com.zhiliaoapp.musically (VN/Global)
+        //          bản TikTok Lite: com.zhiliaoapp.musically.lite
+        //          bản Trill (TQ):  com.ss.android.ugc.trill
+        "tiktok"    to listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.zhiliaoapp.musically.lite"),
+        "tik tok"   to listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.zhiliaoapp.musically.lite"),
+        "tik"       to listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill"),
+        // YouTube
+        "youtube"   to listOf("com.google.android.youtube"),
+        "you tube"  to listOf("com.google.android.youtube"),
+        "yt"        to listOf("com.google.android.youtube"),
+        // Mạng xã hội
+        "zalo"      to listOf("com.zing.zalo"),
+        "facebook"  to listOf("com.facebook.katana"),
+        "fb"        to listOf("com.facebook.katana"),
         "messenger" to listOf("com.facebook.orca"),
-        "chrome" to listOf("com.android.chrome"),
-        "google" to listOf("com.google.android.googlequicksearchbox"),
-        "shopee" to listOf("com.shopee.vn"),
-        "lazada" to listOf("com.lazada.android"),
-        "maps" to listOf("com.google.android.apps.maps"),
-        "ban do" to listOf("com.google.android.apps.maps")
+        "instagram" to listOf("com.instagram.android"),
+        "ins"       to listOf("com.instagram.android"),
+        // Trình duyệt & Google
+        "chrome"    to listOf("com.android.chrome"),
+        "google"    to listOf("com.google.android.googlequicksearchbox"),
+        // Mua sắm
+        "shopee"    to listOf("com.shopee.vn"),
+        "lazada"    to listOf("com.lazada.android"),
+        // Bản đồ
+        "maps"      to listOf("com.google.android.apps.maps"),
+        "ban do"    to listOf("com.google.android.apps.maps"),
+        "google map" to listOf("com.google.android.apps.maps"),
+        // Gọi video
+        "zoom"      to listOf("us.zoom.videomeetings"),
+        "meet"      to listOf("com.google.android.apps.meetings"),
+        "teams"     to listOf("com.microsoft.teams"),
+        // Nhạc & Media
+        "spotify"   to listOf("com.spotify.music"),
+        "capcut"    to listOf("com.lemon.lvoverseas")
     )
 
     /**

@@ -36,16 +36,25 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
         }
 
         // 2. Điều khiển cử chỉ cuộn / lướt (TikTok, Facebook, YouTube Shorts, v.v.)
+        //
+        // QUY ƯỚC:
+        //   "lướt lên"   = xem video/nội dung TIẾP THEO phía dưới   → ScrollUp  (vuốt ngón tay lên)
+        //   "lướt xuống" = xem video/nội dung TRƯỚC ĐÓ phía trên   → ScrollDown (vuốt ngón tay xuống)
+        //
+        // Các từ đồng nghĩa nhận được (có dấu và không dấu):
         if (normalized.contains("luot len") || normalized.contains("cuon len") ||
+            normalized.contains("vuot len") || normalized.contains("next") ||
             normalized.contains("video tiep") || normalized.contains("tiep theo") ||
-            normalized.contains("next video") || normalized == "len"
+            normalized.contains("next video") || normalized.contains("sang video") ||
+            normalized.contains("xem tiep") || normalized == "len"
         ) {
             return Command.ScrollUp
         }
 
         if (normalized.contains("luot xuong") || normalized.contains("cuon xuong") ||
+            normalized.contains("vuot xuong") || normalized.contains("previous") ||
             normalized.contains("video truoc") || normalized.contains("quay lai video") ||
-            normalized == "xuong"
+            normalized.contains("xem lai") || normalized == "xuong"
         ) {
             return Command.ScrollDown
         }
@@ -70,17 +79,29 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.GoHome
         }
 
-        // 5. Điều khiển âm lượng
-        if (normalized.contains("tang am luong") || normalized.contains("bat tieng to hon") || normalized.contains("to len")) {
+        // 5. Điều khiển âm lượng — nhận cả có dấu và không dấu
+        if (normalized.contains("tang am luong") || normalized.contains("tang am") ||
+            normalized.contains("am luong len") || normalized.contains("to len") ||
+            normalized.contains("bat tieng to hon") || normalized.contains("lon hon") ||
+            normalized.contains("volume up") || normalized.contains("louder")
+        ) {
             return Command.ChangeVolume(Command.VolumeAction.UP)
         }
-        if (normalized.contains("giam am luong") || normalized.contains("cho tieng nho lai") || normalized.contains("nho lai")) {
+        if (normalized.contains("giam am luong") || normalized.contains("giam am") ||
+            normalized.contains("am luong xuong") || normalized.contains("nho lai") ||
+            normalized.contains("cho tieng nho lai") || normalized.contains("nho hon") ||
+            normalized.contains("volume down") || normalized.contains("quieter")
+        ) {
             return Command.ChangeVolume(Command.VolumeAction.DOWN)
         }
-        if (normalized.contains("tat tieng") || normalized.contains("im lang") || normalized.contains("mute")) {
+        if (normalized.contains("tat tieng") || normalized.contains("im lang") ||
+            normalized.contains("mute") || normalized.contains("tat am")
+        ) {
             return Command.ChangeVolume(Command.VolumeAction.MUTE)
         }
-        if (normalized.contains("bat tieng") || normalized.contains("unmute")) {
+        if (normalized.contains("bat tieng") || normalized.contains("unmute") ||
+            normalized.contains("bat am") || normalized.contains("co tieng")
+        ) {
             return Command.ChangeVolume(Command.VolumeAction.UNMUTE)
         }
 

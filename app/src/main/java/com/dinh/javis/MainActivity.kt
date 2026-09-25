@@ -23,22 +23,23 @@ import com.dinh.javis.service.FloatingBubbleService
 import com.dinh.javis.settings.SettingsActivity
 import com.dinh.javis.ui.ChatAdapter
 import com.dinh.javis.utils.PermissionHelper
+import com.dinh.javis.voice.ContinuousVoiceListener
 import com.dinh.javis.voice.Speaker
-import com.dinh.javis.voice.VoiceInput
 import com.dinh.javis.voice.WakeWordDetector
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * Màn hình chính của JAVIS
- * Điều phối thu âm, nhận diện lệnh, hiển thị log hội thoại và kích hoạt hành động
+ * Sử dụng ContinuousVoiceListener để nghe liên tục, không bao giờ dừng tự động.
+ * TTS tích hợp pause/resume để tránh tự nghe giọng mình.
  */
-class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var preferenceManager: PreferenceManager
     private lateinit var speaker: Speaker
-    private lateinit var voiceInput: VoiceInput
+    private lateinit var continuousListener: ContinuousVoiceListener
     private lateinit var commandParser: CommandParser
     private lateinit var commandExecutor: CommandExecutor
     private lateinit var chatAdapter: ChatAdapter
@@ -46,7 +47,6 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
     private var wakeWordDetector: WakeWordDetector? = null
 
     private var pulseAnimator: ObjectAnimator? = null
-    private var isCurrentlyListening = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,27 +75,21 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
     }
 
     private fun initViews() {
-        // Cấu hình danh sách tin nhắn hội thoại
         chatAdapter = ChatAdapter()
-        val layoutManager = LinearLayoutManager(this).apply {
-            stackFromEnd = true
-        }
+        val layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
         binding.rvChat.layoutManager = layoutManager
         binding.rvChat.adapter = chatAdapter
 
-        // Lời chào mở đầu của JAVIS
         appendMessage(
-            "Xin chào anh Dinh! Tôi là JAVIS. Hãy bấm nút micro hoặc nói câu lệnh để tôi hỗ trợ bạn.",
+            "Xin chào anh Dinh! Tôi là JAVIS. Đang lắng nghe liên tục — cứ nói tự nhiên!",
             isUser = false,
             tag = "JAVIS"
         )
 
-        // Nút mở Cài đặt
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Chạm vào badge Trợ năng để mở cài đặt trợ năng nếu chưa bật
         binding.badgeAccessibility.setOnClickListener {
             if (!PermissionHelper.isAccessibilityServiceEnabled(this)) {
                 PermissionHelper.openAccessibilitySettings(this)
@@ -104,19 +98,17 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
             }
         }
 
-        // Nút Mic chính
+        // Nút Mic: toggle nghe liên tục bật/tắt
         binding.btnMic.setOnClickListener {
-            if (isCurrentlyListening) {
-                stopListening()
+            if (continuousListener.isListening) {
+                continuousListener.stop()
+                setMicUiListening(false)
             } else {
-                startListening()
+                continuousListener.start()
             }
         }
 
-        // Xử lý gửi lệnh bằng bàn phím
-        binding.btnSend.setOnClickListener {
-            processManualTextInput()
-        }
+        binding.btnSend.setOnClickListener { processManualTextInput() }
         binding.etCommand.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
                 processManualTextInput()
@@ -142,9 +134,25 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
 
     private fun initServicesAndParsers() {
         speaker = Speaker(this)
-        voiceInput = VoiceInput(this, this)
-        commandParser = CommandParser()
 
+        // ContinuousVoiceListener: callback khi có kết quả, khi UI thay đổi, khi nhận partial
+        continuousListener = ContinuousVoiceListener(
+            context = this,
+            onResult = { text ->
+                runOnUiThread { handleSpokenText(text) }
+            },
+            onStatusChange = { isListening ->
+                runOnUiThread { setMicUiListening(isListening) }
+            },
+            onPartialResult = { partial ->
+                runOnUiThread { binding.tvVoiceStatus.text = partial }
+            }
+        )
+
+        // Kết nối Speaker và ContinuousVoiceListener để mic tự pause khi TTS nói
+        speaker.continuousListener = continuousListener
+
+        commandParser = CommandParser()
         val openAiClient = OpenAiClient(preferenceManager)
         commandExecutor = CommandExecutor(
             context = this,
@@ -152,20 +160,20 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
             openAiClient = openAiClient,
             scope = lifecycleScope,
             onLogMessage = { text, isUser, tag ->
-                runOnUiThread {
-                    appendMessage(text, isUser, tag)
-                }
+                runOnUiThread { appendMessage(text, isUser, tag) }
             }
         )
 
-        // Khởi tạo Wake Word Detector (mặc định tắt theo cấu hình)
         wakeWordDetector = WakeWordDetector(this) {
-            runOnUiThread {
-                startListening()
-            }
+            runOnUiThread { continuousListener.start() }
         }
         if (preferenceManager.isWakeWordEnabled) {
             wakeWordDetector?.start(preferenceManager.picovoiceKey)
+        }
+
+        // Bắt đầu nghe liên tục ngay khi app khởi động (nếu có quyền)
+        if (PermissionHelper.hasCorePermissions(this)) {
+            continuousListener.start()
         }
     }
 
@@ -180,10 +188,7 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
     private fun handleLaunchIntent(intent: Intent?) {
         if (intent == null) return
         if (intent.action == ACTION_TRIGGER_VOICE || intent.action == "com.dinh.javis.ACTION_START_VOICE") {
-            // Khởi động nghe ngay khi được gọi từ Tile hoặc Floating Overlay
-            binding.root.postDelayed({
-                startListening()
-            }, 300)
+            binding.root.postDelayed({ continuousListener.start() }, 300)
         }
     }
 
@@ -210,24 +215,7 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
         )
     }
 
-    private fun startListening() {
-        if (!PermissionHelper.hasCorePermissions(this)) {
-            Toast.makeText(this, "Vui lòng cấp quyền Micro để bắt đầu nói!", Toast.LENGTH_SHORT).show()
-            PermissionHelper.requestCorePermissions(this)
-            return
-        }
-
-        speaker.stop()
-        voiceInput.startListening()
-    }
-
-    private fun stopListening() {
-        voiceInput.stopListening()
-        setMicUiListening(false)
-    }
-
     private fun setMicUiListening(listening: Boolean) {
-        isCurrentlyListening = listening
         if (listening) {
             binding.btnMic.backgroundTintList = ContextCompat.getColorStateList(this, R.color.mic_listening)
             binding.tvVoiceStatus.text = getString(R.string.status_listening)
@@ -256,15 +244,8 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
         appendMessage(text, isUser = true)
         binding.tvVoiceStatus.text = getString(R.string.status_processing)
 
-        // Phân tích và thực thi lệnh
         val command = commandParser.parse(text)
         commandExecutor.execute(command)
-
-        binding.root.postDelayed({
-            if (!isCurrentlyListening) {
-                binding.tvVoiceStatus.text = getString(R.string.status_ready)
-            }
-        }, 1500)
     }
 
     private fun appendMessage(text: String, isUser: Boolean, tag: String? = null) {
@@ -273,64 +254,20 @@ class MainActivity : AppCompatActivity(), VoiceInput.VoiceInputListener {
         binding.rvChat.smoothScrollToPosition(chatAdapter.itemCount - 1)
     }
 
-    // =========================================================================
-    // VOICE INPUT CALLBACKS
-    // =========================================================================
-    override fun onReady() {
-        runOnUiThread {
-            setMicUiListening(true)
-        }
-    }
-
-    override fun onBeginningOfSpeech() {
-        runOnUiThread {
-            binding.tvVoiceStatus.text = "Đang nhận diện giọng nói..."
-        }
-    }
-
-    override fun onRmsChanged(rmsdB: Float) {
-        // Tùy chỉnh hiệu ứng sóng âm theo biên độ âm lượng
-        if (rmsdB > 2f) {
-            val scale = 1.0f + (rmsdB / 20f).coerceIn(0f, 0.5f)
-            binding.pulseRing.scaleX = scale
-            binding.pulseRing.scaleY = scale
-        }
-    }
-
-    override fun onPartialResult(partialText: String) {
-        runOnUiThread {
-            binding.tvVoiceStatus.text = partialText
-        }
-    }
-
-    override fun onFinalResult(text: String) {
-        runOnUiThread {
-            setMicUiListening(false)
-            handleSpokenText(text)
-        }
-    }
-
-    override fun onError(errorCode: Int, errorMessage: String) {
-        runOnUiThread {
-            setMicUiListening(false)
-            binding.tvVoiceStatus.text = errorMessage
-            Toast.makeText(this@MainActivity, errorMessage, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PermissionHelper.REQUEST_CODE_CORE_PERMISSIONS) {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             if (granted) {
                 Toast.makeText(this, "Đã cấp quyền Micro thành công!", Toast.LENGTH_SHORT).show()
+                continuousListener.start()
             }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        voiceInput.destroy()
+        continuousListener.stop()
         speaker.shutdown()
         wakeWordDetector?.destroy()
         pulseAnimator?.cancel()
