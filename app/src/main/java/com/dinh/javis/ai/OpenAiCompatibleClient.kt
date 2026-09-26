@@ -72,6 +72,11 @@ class OpenAiCompatibleClient(
     private fun resolveModelName(modelName: String, url: String): String {
         val trimmedModel = modelName.trim()
         if (url.contains("gateway.genrostore.com") || url.contains("openrouter.ai")) {
+            // GenroStore gateway active catalog supports pixtral-12b-2409 for Mistral Vision.
+            // Map pixtral-large models to supported mistral/pixtral-12b-2409 to prevent 401/400 gateway errors.
+            if (trimmedModel.contains("pixtral-large", ignoreCase = true)) {
+                return "mistral/pixtral-12b-2409"
+            }
             if (!trimmedModel.contains("/")) {
                 if (trimmedModel.contains("pixtral", ignoreCase = true) || trimmedModel.contains("mistral", ignoreCase = true)) {
                     return "mistral/$trimmedModel"

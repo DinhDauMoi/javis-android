@@ -6,11 +6,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Unit tests cho OpenAiCompatibleClient:
- * - Chuẩn hóa endpoint (normalizeEndpoint)
- * - Tự động bổ sung prefix model (resolveModelName) cho Gateway (GenroStore / OpenRouter)
- * - Nhận diện mô hình Mistral/Pixtral (isMistralOrPixtral)
- * - Chuyển đổi system prompt cho Mistral (tránh lỗi HTTP 400 system role)
+ * Unit tests for OpenAiCompatibleClient:
+ * - Endpoint normalization (normalizeEndpoint)
+ * - Automatic model name prefix resolution for Gateway (GenroStore / OpenRouter)
+ * - Mistral/Pixtral model identification (isMistralOrPixtral)
+ * - System prompt transformation for Mistral (preventing HTTP 400 system role error)
  */
 class OpenAiCompatibleClientTest {
 
@@ -37,6 +37,9 @@ class OpenAiCompatibleClientTest {
     private fun resolveModelName(modelName: String, url: String): String {
         val trimmedModel = modelName.trim()
         if (url.contains("gateway.genrostore.com") || url.contains("openrouter.ai")) {
+            if (trimmedModel.contains("pixtral-large", ignoreCase = true)) {
+                return "mistral/pixtral-12b-2409"
+            }
             if (!trimmedModel.contains("/")) {
                 if (trimmedModel.contains("pixtral", ignoreCase = true) || trimmedModel.contains("mistral", ignoreCase = true)) {
                     return "mistral/$trimmedModel"
@@ -85,6 +88,15 @@ class OpenAiCompatibleClientTest {
     fun testResolveModelNamePreserveExistingPrefix() {
         val model = resolveModelName("mistral/pixtral-12b-2409", "https://gateway.genrostore.com/v1")
         assertEquals("mistral/pixtral-12b-2409", model)
+    }
+
+    @Test
+    fun testResolveModelNamePixtralLargeAutoMap() {
+        val modelWithPrefix = resolveModelName("mistral/pixtral-large-latest", "https://gateway.genrostore.com/v1")
+        assertEquals("mistral/pixtral-12b-2409", modelWithPrefix)
+
+        val modelNoPrefix = resolveModelName("pixtral-large-latest", "https://gateway.genrostore.com/v1")
+        assertEquals("mistral/pixtral-12b-2409", modelNoPrefix)
     }
 
     @Test
