@@ -121,6 +121,5 @@ jobs:
             ---
             ### 📥 Download & Installation:
             - Download the attached `javis-v1.0.${{ github.run_number }}-debug.apk` asset below and install it directly on your Android device.
+          token: ${{ github.token }}
           files: artifacts/javis-v1.0.${{ github.run_number }}-debug.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
