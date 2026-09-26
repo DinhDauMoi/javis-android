@@ -51,8 +51,8 @@ android {
         viewBinding = true
     }
 
-    aaptOptions {
-        noCompress("onnx")
+    androidResources {
+        noCompress += "onnx"
     }
 }
 

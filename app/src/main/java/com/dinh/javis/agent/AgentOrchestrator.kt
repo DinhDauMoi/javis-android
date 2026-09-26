@@ -12,6 +12,7 @@ import com.dinh.javis.data.TaskRun
 import com.dinh.javis.service.JavisAccessibilityService
 import com.dinh.javis.vision.ScreenObservationEngine
 import kotlinx.coroutines.*
+import kotlin.coroutines.resume
 import java.util.UUID
 
 interface AgentCallback {
@@ -117,7 +118,7 @@ class AgentOrchestrator(private val context: Context) {
                         suspendCancellableCoroutine { cont ->
                             callback?.onConfirmationRequired(policyCheck.reason) { userApproved ->
                                 isApproved = userApproved
-                                if (cont.isActive) cont.resume(Unit) {}
+                                if (cont.isActive) cont.resume(Unit)
                             }
                         }
                         if (!isApproved) {
