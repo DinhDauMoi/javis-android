@@ -227,7 +227,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.btnMic.backgroundTintList = ContextCompat.getColorStateList(
                 this,
-                if (isWaitingHotword) R.color.primary else R.color.card_bg
+                if (isWaitingHotword) R.color.primary else R.color.bg_card
             )
             pulseAnimator?.cancel()
             binding.pulseRing.visibility = View.INVISIBLE
