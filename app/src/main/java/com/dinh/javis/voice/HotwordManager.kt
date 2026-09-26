@@ -12,8 +12,10 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.dinh.javis.data.PreferenceManager
 import com.dinh.javis.utils.PermissionHelper
 import com.openwakeword.OpenWakeWord
+import java.util.Locale
 
 /**
  * Trình quản lý từ khóa đánh thức "javis" bằng openWakeWord (on-device, không cần API key, không cần tài khoản)
@@ -32,6 +34,7 @@ import com.openwakeword.OpenWakeWord
 class HotwordManager(
     private val context: Context,
     private val speaker: Speaker,
+    private val preferenceManager: PreferenceManager,
     private val onCommandRecognized: (String) -> Unit,
     private val onStatusChange: (statusText: String, isListeningCommand: Boolean, isWaitingHotword: Boolean) -> Unit,
     private val onLogMessage: (String, Boolean, String?) -> Unit
@@ -138,6 +141,8 @@ class HotwordManager(
         if (!isRunning || isListeningCommand || isPausedForTts) return
 
         try {
+            val currentThreshold = preferenceManager.wakeWordThreshold
+
             if (openWakeWord == null) {
                 val builder = OpenWakeWord.Builder(context)
 
@@ -156,23 +161,87 @@ class HotwordManager(
                     builder.setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
                 }
 
-                builder.setThreshold(0.5f)
+                builder.setThreshold(currentThreshold)
                 builder.setDebounceMs(1500)
                 openWakeWord = builder.build()
+            } else {
+                openWakeWord?.updateThreshold(currentThreshold)
+            }
+
+            openWakeWord?.setStatusListener { step, isSuccess, detail ->
+                Log.i(TAG, "[$step] Success=$isSuccess: $detail")
+                val tag = if (isSuccess) "HOTWORD" else "LỖI"
+                onLogMessage("[$step] $detail", false, tag)
+            }
+
+            var lastLoggedScoreTime = 0L
+            openWakeWord?.setScoreListener { score, rms ->
+                if (isRunning && !isListeningCommand && !isPausedForTts) {
+                    val threshold = preferenceManager.wakeWordThreshold
+                    val statusText = if (rms > 80f || score > 0.05f) {
+                        String.format(
+                            Locale.US,
+                            "Đang nghe... Score: %.2f / Ngưỡng: %.2f (RMS: %d)",
+                            score,
+                            threshold,
+                            rms.toInt()
+                        )
+                    } else {
+                        String.format(
+                            Locale.US,
+                            "Đang chờ 'javis'... (Ngưỡng: %.2f)",
+                            threshold
+                        )
+                    }
+                    onStatusChange(statusText, false, true)
+
+                    val now = System.currentTimeMillis()
+                    // Log ra chat khi có tiếng nói rõ rệt (rms > 300 hoặc score >= 0.10)
+                    if ((score >= 0.12f || (rms > 350f && score >= 0.05f)) && (now - lastLoggedScoreTime > 1200L)) {
+                        lastLoggedScoreTime = now
+                        val logText = String.format(
+                            Locale.US,
+                            "🎙️ Mic nhận tiếng: Score=%.3f (Ngưỡng kích hoạt: %.2f | RMS: %d)",
+                            score,
+                            threshold,
+                            rms.toInt()
+                        )
+                        Log.i(TAG, logText)
+                        onLogMessage(logText, false, "SCORE")
+                    }
+                }
             }
 
             openWakeWord?.start { score ->
-                Log.d(TAG, "Phát hiện từ khóa 'javis'! Điểm tin cậy: $score")
+                val threshold = preferenceManager.wakeWordThreshold
+                val triggerMsg = String.format(
+                    Locale.US,
+                    "🔥 ĐÃ BẮT ĐƯỢC TỪ KHÓA! Score: %.3f >= Ngưỡng: %.2f",
+                    score,
+                    threshold
+                )
+                Log.i(TAG, triggerMsg)
+                onLogMessage(triggerMsg, false, "WAKE")
                 mainHandler.post { onWakeWordTriggered() }
             }
 
-            onStatusChange("Đang chờ gọi 'javis'...", false, true)
-            Log.i(TAG, "openWakeWord đang lắng nghe từ khóa 'javis'...")
+            val initStatus = String.format(
+                Locale.US,
+                "Đang chờ gọi 'javis'... (Ngưỡng: %.2f)",
+                currentThreshold
+            )
+            onStatusChange(initStatus, false, true)
+            Log.i(TAG, "openWakeWord đang lắng nghe từ khóa 'javis' với ngưỡng $currentThreshold...")
         } catch (e: Exception) {
             Log.e(TAG, "Không thể khởi động openWakeWord", e)
             onLogMessage("Lỗi khởi tạo mô hình nhận diện giọng nói: ${e.message}", false, "LỖI")
             speaker.speak("Không thể tải mô hình nhận diện từ khóa")
         }
+    }
+
+    fun updateThreshold() {
+        val newThreshold = preferenceManager.wakeWordThreshold
+        openWakeWord?.updateThreshold(newThreshold)
     }
 
     private fun pauseHotwordDetector() {

@@ -4,9 +4,11 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import java.util.Locale
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.dinh.javis.R
@@ -78,6 +80,29 @@ class SettingsActivity : AppCompatActivity() {
         binding.switchWakeWord.setOnCheckedChangeListener { _, isChecked ->
             preferenceManager.isWakeWordEnabled = isChecked
         }
+
+        // Cấu hình thanh trượt độ nhạy Wake Word (0.10 - 0.70)
+        val currentThreshold = preferenceManager.wakeWordThreshold
+        val initialProgress = ((currentThreshold - 0.10f) * 100).toInt().coerceIn(0, 60)
+        binding.seekWakeWordThreshold.progress = initialProgress
+        binding.tvThresholdValue.text = String.format(Locale.US, "%.2f", currentThreshold)
+
+        binding.seekWakeWordThreshold.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val threshold = 0.10f + (progress / 100f)
+                binding.tvThresholdValue.text = String.format(Locale.US, "%.2f", threshold)
+                if (fromUser) {
+                    preferenceManager.wakeWordThreshold = threshold
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val finalThreshold = 0.10f + ((seekBar?.progress ?: 20) / 100f)
+                preferenceManager.wakeWordThreshold = finalThreshold
+                Toast.makeText(this@SettingsActivity, "Đã lưu độ nhạy: ${String.format(Locale.US, "%.2f", finalThreshold)}", Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 
     private fun setupFloatingMicSection() {

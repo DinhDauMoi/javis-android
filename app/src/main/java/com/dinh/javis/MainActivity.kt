@@ -73,6 +73,9 @@ class MainActivity : AppCompatActivity() {
         updateStatusBadges()
         // Cập nhật trạng thái switch theo cài đặt
         binding.switchWakeWord.isChecked = preferenceManager.isWakeWordEnabled
+        if (::hotwordManager.isInitialized) {
+            hotwordManager.updateThreshold()
+        }
     }
 
     private fun initViews() {
@@ -161,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         hotwordManager = HotwordManager(
             context = this,
             speaker = speaker,
+            preferenceManager = preferenceManager,
             onCommandRecognized = { text ->
                 runOnUiThread { handleSpokenText(text) }
             },

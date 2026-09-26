@@ -43,6 +43,10 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    aaptOptions {
+        noCompress("onnx")
+    }
 }
 
 dependencies {
@@ -68,8 +72,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-    // openWakeWord On-Device Wake Word Detection (free, không tài khoản, không API key)
-    implementation("com.github.msnilsen:openwakeword-android:0.1.0")
+    // ONNX Runtime Android cho openWakeWord on-device
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
