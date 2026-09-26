@@ -18,34 +18,39 @@ object TextNormalizer {
      */
     fun removeAccents(input: String?): String {
         if (input.isNullOrBlank()) return ""
-        
+
         var normalized = input.trim().lowercase()
         // Thay thế ký tự Đ/đ đặc thù trước khi tách dấu Unicode
         normalized = normalized.replace("đ", "d")
-        
+
         val decomposed = Normalizer.normalize(normalized, Normalizer.Form.NFD)
         return DIACRITICS_PATTERN.matcher(decomposed).replaceAll("")
     }
 
     /**
      * Loại bỏ các từ đệm, từ xưng hô thừa trong câu lệnh nói tự nhiên
-     * Ví dụ: "ê javis mở youtube hộ tao với" -> "mở youtube"
+     * Đặc biệt: Tách wake word ("javis", "jarvis", "ê javis", "hey jarvis") nếu người dùng nói liền trong 1 câu:
+     * Ví dụ: "javis lướt lên" -> "lướt lên"
+     *        "ê javis lướt lên dùm" -> "lướt lên"
+     *        "tăng âm lượng dùm tôi với" -> "tăng âm lượng"
      */
     fun stripFillerWords(input: String): String {
         var result = input.trim()
-        val lower = result.lowercase()
 
         val fillers = listOf(
+            // Từ đánh thức & gọi tên
             "ê javis", "hey javis", "ơi javis", "javis ơi", "javis",
-            "hộ tao", "hộ tôi", "hộ mình", "giùm tao", "giùm tôi", "giúp tôi", "giúp với",
-            "dùm với", "dùm tôi", "với nhé", "đi nhé", "nhé bạn", "làm ơn"
+            "ê jarvis", "hey jarvis", "ơi jarvis", "jarvis ơi", "jarvis",
+            // Từ đệm nhờ vả
+            "hộ tao", "hộ tôi", "hộ mình", "hộ em", "hộ anh", "hộ",
+            "giùm tao", "giùm tôi", "giúp tôi", "giúp với", "giúp em", "giúp mình", "giùm",
+            "dùm tao", "dùm tôi", "dùm mình", "dùm với", "dùm",
+            "với nhé", "đi nhé", "nhé bạn", "làm ơn", "với"
         )
 
         for (filler in fillers) {
-            if (lower.contains(filler)) {
-                // Thay thế không phân biệt hoa thường
-                result = result.replace(Regex("(?i)\\b$filler\\b"), "").trim()
-            }
+            // Thay thế không phân biệt hoa thường
+            result = result.replace(Regex("(?i)(?<=^|\\s)$filler(?=\\s|\$|[.,!?])"), "").trim()
         }
 
         // Dọn dẹp khoảng trắng kép

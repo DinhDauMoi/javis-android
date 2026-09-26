@@ -19,32 +19,31 @@ import com.dinh.javis.data.AppDatabase
 import com.dinh.javis.data.Message
 import com.dinh.javis.data.PreferenceManager
 import com.dinh.javis.databinding.ActivityMainBinding
-import com.dinh.javis.service.FloatingBubbleService
 import com.dinh.javis.settings.SettingsActivity
 import com.dinh.javis.ui.ChatAdapter
 import com.dinh.javis.utils.PermissionHelper
-import com.dinh.javis.voice.ContinuousVoiceListener
+import com.dinh.javis.voice.HotwordManager
 import com.dinh.javis.voice.Speaker
-import com.dinh.javis.voice.WakeWordDetector
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
  * Màn hình chính của JAVIS
- * Sử dụng ContinuousVoiceListener để nghe liên tục, không bao giờ dừng tự động.
- * TTS tích hợp pause/resume để tránh tự nghe giọng mình.
+ * Tích hợp HotwordManager (openWakeWord on-device) chạy nền:
+ * - Chờ từ đánh thức "javis" (hoặc Hey Jarvis).
+ * - Bắt được -> beep thức dậy -> nghe 1 lệnh (6s) -> xử lý -> trở về chờ "javis".
+ * - Nút gạt "Chờ gọi 'javis'" mặc định BẬT, tắt -> dừng hẳn mic.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var preferenceManager: PreferenceManager
     private lateinit var speaker: Speaker
-    private lateinit var continuousListener: ContinuousVoiceListener
+    private lateinit var hotwordManager: HotwordManager
     private lateinit var commandParser: CommandParser
     private lateinit var commandExecutor: CommandExecutor
     private lateinit var chatAdapter: ChatAdapter
     private lateinit var database: AppDatabase
-    private var wakeWordDetector: WakeWordDetector? = null
 
     private var pulseAnimator: ObjectAnimator? = null
 
@@ -72,6 +71,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateStatusBadges()
+        // Cập nhật trạng thái switch theo cài đặt
+        binding.switchWakeWord.isChecked = preferenceManager.isWakeWordEnabled
     }
 
     private fun initViews() {
@@ -81,7 +82,7 @@ class MainActivity : AppCompatActivity() {
         binding.rvChat.adapter = chatAdapter
 
         appendMessage(
-            "Xin chào anh Dinh! Tôi là JAVIS. Đang lắng nghe liên tục — cứ nói tự nhiên!",
+            "Xin chào anh Dinh! Tôi là JAVIS. Gọi \"javis\" để đánh thức và ra lệnh rảnh tay khi xem TikTok!",
             isUser = false,
             tag = "JAVIS"
         )
@@ -98,14 +99,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Nút Mic: toggle nghe liên tục bật/tắt
-        binding.btnMic.setOnClickListener {
-            if (continuousListener.isListening) {
-                continuousListener.stop()
-                setMicUiListening(false)
+        // Nút bật/tắt "Chờ gọi 'javis'" trên giao diện (mặc định BẬT)
+        binding.switchWakeWord.isChecked = preferenceManager.isWakeWordEnabled
+        binding.switchWakeWord.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.isWakeWordEnabled = isChecked
+            if (isChecked) {
+                if (!PermissionHelper.hasPermission(this, android.Manifest.permission.RECORD_AUDIO)) {
+                    PermissionHelper.requestCorePermissions(this)
+                } else {
+                    hotwordManager.start()
+                }
             } else {
-                continuousListener.start()
+                hotwordManager.stop()
             }
+        }
+
+        // Nút Mic lớn: Bấm để nói 1 lệnh trực tiếp mà không cần gọi "javis"
+        binding.btnMic.setOnClickListener {
+            hotwordManager.triggerOneShotCommand()
         }
 
         binding.btnSend.setOnClickListener { processManualTextInput() }
@@ -134,26 +145,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun initServicesAndParsers() {
         speaker = Speaker(this)
-
-        // ContinuousVoiceListener: callback khi có kết quả, khi UI thay đổi, khi nhận partial
-        continuousListener = ContinuousVoiceListener(
-            context = this,
-            onResult = { text ->
-                runOnUiThread { handleSpokenText(text) }
-            },
-            onStatusChange = { isListening ->
-                runOnUiThread { setMicUiListening(isListening) }
-            },
-            onPartialResult = { partial ->
-                runOnUiThread { binding.tvVoiceStatus.text = partial }
-            }
-        )
-
-        // Kết nối Speaker và ContinuousVoiceListener để mic tự pause khi TTS nói
-        speaker.continuousListener = continuousListener
-
         commandParser = CommandParser()
         val openAiClient = OpenAiClient(preferenceManager)
+
         commandExecutor = CommandExecutor(
             context = this,
             speaker = speaker,
@@ -164,16 +158,26 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        wakeWordDetector = WakeWordDetector(this) {
-            runOnUiThread { continuousListener.start() }
-        }
-        if (preferenceManager.isWakeWordEnabled) {
-            wakeWordDetector?.start(preferenceManager.picovoiceKey)
-        }
+        hotwordManager = HotwordManager(
+            context = this,
+            speaker = speaker,
+            onCommandRecognized = { text ->
+                runOnUiThread { handleSpokenText(text) }
+            },
+            onStatusChange = { statusText, isListeningCommand, isWaitingHotword ->
+                runOnUiThread {
+                    binding.tvVoiceStatus.text = statusText
+                    setMicUiState(isListeningCommand, isWaitingHotword)
+                }
+            },
+            onLogMessage = { text, isUser, tag ->
+                runOnUiThread { appendMessage(text, isUser, tag) }
+            }
+        )
 
-        // Bắt đầu nghe liên tục ngay khi app khởi động (nếu có quyền)
-        if (PermissionHelper.hasCorePermissions(this)) {
-            continuousListener.start()
+        // Khởi động Hotword nếu có quyền và được bật (mặc định BẬT)
+        if (preferenceManager.isWakeWordEnabled && PermissionHelper.hasCorePermissions(this)) {
+            hotwordManager.start()
         }
     }
 
@@ -188,7 +192,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleLaunchIntent(intent: Intent?) {
         if (intent == null) return
         if (intent.action == ACTION_TRIGGER_VOICE || intent.action == "com.dinh.javis.ACTION_START_VOICE") {
-            binding.root.postDelayed({ continuousListener.start() }, 300)
+            binding.root.postDelayed({ hotwordManager.triggerOneShotCommand() }, 300)
         }
     }
 
@@ -215,15 +219,16 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun setMicUiListening(listening: Boolean) {
-        if (listening) {
+    private fun setMicUiState(isListeningCommand: Boolean, isWaitingHotword: Boolean) {
+        if (isListeningCommand) {
             binding.btnMic.backgroundTintList = ContextCompat.getColorStateList(this, R.color.mic_listening)
-            binding.tvVoiceStatus.text = getString(R.string.status_listening)
             binding.pulseRing.visibility = View.VISIBLE
             pulseAnimator?.start()
         } else {
-            binding.btnMic.backgroundTintList = ContextCompat.getColorStateList(this, R.color.primary)
-            binding.tvVoiceStatus.text = getString(R.string.status_ready)
+            binding.btnMic.backgroundTintList = ContextCompat.getColorStateList(
+                this,
+                if (isWaitingHotword) R.color.primary else R.color.card_bg
+            )
             pulseAnimator?.cancel()
             binding.pulseRing.visibility = View.INVISIBLE
             binding.pulseRing.scaleX = 1f
@@ -260,16 +265,21 @@ class MainActivity : AppCompatActivity() {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             if (granted) {
                 Toast.makeText(this, "Đã cấp quyền Micro thành công!", Toast.LENGTH_SHORT).show()
-                continuousListener.start()
+                if (preferenceManager.isWakeWordEnabled) {
+                    hotwordManager.start()
+                }
+            } else {
+                val deniedMsg = "Bạn đã từ chối quyền Micro. JAVIS không thể nghe bạn nói nếu không có quyền này."
+                appendMessage(deniedMsg, isUser = false, tag = "CẢNH BÁO")
+                speaker.speak(deniedMsg)
             }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        continuousListener.stop()
+        hotwordManager.stop()
         speaker.shutdown()
-        wakeWordDetector?.destroy()
         pulseAnimator?.cancel()
     }
 

@@ -15,9 +15,15 @@
     
     <!-- UI Strings -->
     <string name="status_ready">Sẵn sàng nghe lệnh...</string>
+    <string name="status_waiting_hotword">Đang chờ gọi \"javis\"...</string>
+    <string name="status_listening_command">Đang nghe lệnh (6s)... Nói đi bạn!</string>
+    <string name="status_hotword_disabled">Đã tắt chờ gọi \"javis\"</string>
     <string name="status_listening">Đang lắng nghe... Nói đi bạn!</string>
     <string name="status_processing">Đang xử lý câu lệnh...</string>
     <string name="status_speaking">Đang phản hồi...</string>
+    
+    <string name="switch_hotword_title">Chờ gọi \"javis\"</string>
+    <string name="switch_hotword_desc">Tự động lắng nghe từ khóa \"javis\" khi đang xem TikTok / app khác</string>
     
     <string name="btn_listen">NÓI LỆNH</string>
     <string name="hint_input">Hoặc nhập câu lệnh tại đây...</string>
@@ -37,10 +43,10 @@
     <string name="label_model">Model name</string>
     <string name="hint_model">gpt-4o-mini hoặc tên model tương thích</string>
     
-    <string name="section_wakeword">Từ khóa đánh thức (Wake Word)</string>
-    <string name="enable_wakeword">Bật lắng nghe từ khóa "Hey Javis"</string>
-    <string name="desc_wakeword">Tính năng chạy ngầm Porcupine Picovoice (Mặc định: TẮT)</string>
-    <string name="label_picovoice_key">Picovoice AccessKey (Nếu dùng)</string>
+    <string name="section_wakeword">Từ khóa đánh thức (openWakeWord)</string>
+    <string name="enable_wakeword">Bật chờ gọi \"javis\" (Mặc định: BẬT)</string>
+    <string name="desc_wakeword">Chạy on-device bằng ONNX Runtime, hoàn toàn miễn phí, không cần tài khoản hay API key. Tự động dùng model javis.onnx nếu có trong assets, fallback built-in Hey Jarvis.</string>
+    <string name="label_picovoice_key">Picovoice AccessKey (Không bắt buộc)</string>
     
     <string name="section_floating">Nút Micro Nổi (Overlay)</string>
     <string name="enable_floating_button">Hiển thị nút mic nổi trên mọi ứng dụng</string>

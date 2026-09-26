@@ -99,6 +99,58 @@
 
     </LinearLayout>
 
+    <!-- Nút Bật/Tắt "Chờ gọi 'javis'" (openWakeWord) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/layoutWakeWordCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="4dp"
+        android:background="@drawable/bg_glass_card"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="10dp"
+        app:layout_constraintTop_toBottomOf="@id/layoutStatusBadges">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:orientation="vertical"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/switchWakeWord"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/switch_hotword_title"
+                android:textColor="@color/primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/switch_hotword_desc"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchWakeWord"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:thumbTint="@color/primary"
+            app:trackTint="#4000E5FF" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
     <!-- Conversation / Logs Recycler -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvChat"
@@ -108,7 +160,7 @@
         android:padding="16dp"
         android:scrollbars="vertical"
         app:layout_constraintBottom_toTopOf="@id/layoutVoiceControl"
-        app:layout_constraintTop_toBottomOf="@id/layoutStatusBadges"
+        app:layout_constraintTop_toBottomOf="@id/layoutWakeWordCard"
         tools:listitem="@layout/item_chat_message" />
 
     <!-- Voice Control & Text Input Bar -->
@@ -128,7 +180,7 @@
             android:id="@+id/tvVoiceStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/status_ready"
+            android:text="@string/status_waiting_hotword"
             android:textColor="@color/text_cyan"
             android:textSize="13sp"
             android:textStyle="bold"

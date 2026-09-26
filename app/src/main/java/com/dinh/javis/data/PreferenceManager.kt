@@ -24,7 +24,7 @@ class PreferenceManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_MODEL, value.trim()).apply()
 
     var isWakeWordEnabled: Boolean
-        get() = prefs.getBoolean(KEY_WAKEWORD_ENABLED, false)
+        get() = prefs.getBoolean(KEY_WAKEWORD_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_WAKEWORD_ENABLED, value).apply()
 
     var picovoiceKey: String

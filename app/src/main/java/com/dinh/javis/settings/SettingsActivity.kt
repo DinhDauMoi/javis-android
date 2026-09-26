@@ -73,18 +73,10 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupWakeWordSection() {
         binding.switchWakeWord.isChecked = preferenceManager.isWakeWordEnabled
-        binding.tilPicovoiceKey.visibility = if (preferenceManager.isWakeWordEnabled) View.VISIBLE else View.GONE
-        binding.etPicovoiceKey.setText(preferenceManager.picovoiceKey)
+        binding.tilPicovoiceKey.visibility = View.GONE
 
         binding.switchWakeWord.setOnCheckedChangeListener { _, isChecked ->
             preferenceManager.isWakeWordEnabled = isChecked
-            binding.tilPicovoiceKey.visibility = if (isChecked) View.VISIBLE else View.GONE
-        }
-
-        binding.etPicovoiceKey.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                preferenceManager.picovoiceKey = binding.etPicovoiceKey.text?.toString()?.trim() ?: ""
-            }
         }
     }
 

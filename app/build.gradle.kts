@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.dinh.javis"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.dinh.javis"
@@ -68,8 +68,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-    // Porcupine Wake Word (Tùy chọn - có thể kích hoạt khi cần)
-    // implementation("ai.picovoice:porcupine-android:3.0.0")
+    // openWakeWord On-Device Wake Word Detection (free, không tài khoản, không API key)
+    implementation("com.github.msnilsen:openwakeword-android:0.1.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

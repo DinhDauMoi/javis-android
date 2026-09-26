@@ -29,7 +29,11 @@ import kotlinx.coroutines.withContext
 
 /**
  * Bộ thực thi lệnh trung tâm của JAVIS
- * Điều phối giữa AccessibilityService, phần cứng hệ thống, danh bạ, bộ phát âm và AI
+ * Tối ưu theo Prompt v4:
+ * - Khi nhận đúng lệnh hành động (lướt, âm lượng, mở app): chỉ beep ngắn 100ms, KHÔNG TTS,
+ *   giúp video TikTok/YouTube không bị dừng hay mất tiếng.
+ * - TTS chỉ dùng khi: có lỗi, thông tin hỏi đáp (giờ/ngày), hoặc AI trả lời.
+ * - Quy ước chiều lướt: "lướt lên" = xem nội dung mới phía dưới (giống vuốt ngón tay từ dưới lên).
  */
 class CommandExecutor(
     private val context: Context,
@@ -42,7 +46,7 @@ class CommandExecutor(
     private var activeTimer: CountDownTimer? = null
 
     /**
-     * Thực thi lệnh và phản hồi bằng giọng nói + giao diện
+     * Thực thi lệnh và phản hồi bằng beep hoặc giọng nói + giao diện
      */
     fun execute(command: Command) {
         when (command) {
@@ -70,53 +74,80 @@ class CommandExecutor(
         }
     }
 
-    private fun respond(text: String, tag: String? = null) {
+    /**
+     * Phản hồi bằng tiếng beep 100ms và ghi log (dành cho thao tác thành công, không ngắt video)
+     */
+    private fun respondWithBeep(logText: String, tag: String) {
+        onLogMessage(logText, false, tag)
+        speaker.playAckBeep()
+    }
+
+    /**
+     * Phản hồi bằng giọng nói (dành cho lỗi, câu hỏi thời gian, AI trả lời)
+     */
+    private fun respondWithVoice(text: String, tag: String? = null) {
         onLogMessage(text, false, tag)
         speaker.speak(text)
     }
 
     // =========================================================================
-    // 1. MỞ ỨNG DỤNG
+    // 1. MỞ ỨNG DỤNG (YOUTUBE, TIKTOK, V.V.)
     // =========================================================================
     private fun handleOpenApp(appName: String) {
         val (success, appTitle) = AppHelper.openAppByName(context, appName)
         if (success) {
-            respond("Đang mở $appTitle", "MỞ APP")
+            respondWithBeep("Đang mở $appTitle", "MỞ APP")
         } else {
-            respond("Chưa cài $appName trên máy của bạn.", "LỖI")
+            respondWithVoice("Chưa cài $appName trên máy này.", "LỖI")
         }
     }
 
     // =========================================================================
-    // 2. ĐIỀU KHIỂN TRỢ NĂNG (SCROLL, CLICK, NAV)
+    // 2. ĐIỀU KHIỂN TRỢ NĂNG (LƯỚT LÊN, LƯỚT XUỐNG, CLICK, NAV)
     // =========================================================================
+
+    /**
+     * Kiểm tra dịch vụ Trợ năng. Nếu chưa bật:
+     * Nói: "Bạn chưa bật Trợ năng cho JAVIS" và tự động mở Cài đặt -> Trợ năng.
+     */
     private fun ensureAccessibilityService(): JavisAccessibilityService? {
         val service = JavisAccessibilityService.instance
         if (service == null) {
-            respond("Mở Cài đặt, Trợ năng và bật JAVIS để điều khiển màn hình.", "TRỢ NĂNG")
+            respondWithVoice("Bạn chưa bật Trợ năng cho JAVIS", "TRỢ NĂNG")
             PermissionHelper.openAccessibilitySettings(context)
             return null
         }
         return service
     }
 
+    /**
+     * "lướt lên", "vuốt lên", "cuộn lên":
+     * Xem nội dung tiếp theo (video TikTok tiếp theo)
+     * Thử ACTION_SCROLL_FORWARD qua AccessibilityService, fallback vuốt từ dưới lên giữa màn hình.
+     * Quy ước: "lướt lên" = xem nội dung mới phía dưới (vuốt ngón tay từ dưới lên).
+     */
     private fun handleScrollUp() {
         val service = ensureAccessibilityService() ?: return
         val ok = service.scrollForward()
         if (ok) {
-            respond("Đã lướt lên", "LƯỚT LÊN")
+            respondWithBeep("Đã lướt lên (video tiếp theo)", "LƯỚT LÊN")
         } else {
-            respond("Không thể cuộn màn hình lúc này", "LƯỚT LÊN")
+            respondWithVoice("Không thể cuộn màn hình lúc này", "LƯỚT LÊN")
         }
     }
 
+    /**
+     * "lướt xuống", "vuốt xuống", "cuộn xuống":
+     * Xem nội dung trước đó (video TikTok trước)
+     * ACTION_SCROLL_BACKWARD, fallback vuốt từ trên xuống.
+     */
     private fun handleScrollDown() {
         val service = ensureAccessibilityService() ?: return
         val ok = service.scrollBackward()
         if (ok) {
-            respond("Đã lướt xuống", "LƯỚT XUỐNG")
+            respondWithBeep("Đã lướt xuống (video trước)", "LƯỚT XUỐNG")
         } else {
-            respond("Không thể cuộn màn hình lúc này", "LƯỚT XUỐNG")
+            respondWithVoice("Không thể cuộn màn hình lúc này", "LƯỚT XUỐNG")
         }
     }
 
@@ -124,45 +155,45 @@ class CommandExecutor(
         val service = ensureAccessibilityService() ?: return
         val ok = service.clickNodeByText(buttonText)
         if (ok) {
-            respond("Đã bấm nút $buttonText", "BẤM NÚT")
+            respondWithBeep("Đã bấm nút $buttonText", "BẤM NÚT")
         } else {
-            respond("Không tìm thấy nút \"$buttonText\" trên màn hình", "BẤM NÚT")
+            respondWithVoice("Không tìm thấy nút \"$buttonText\" trên màn hình", "BẤM NÚT")
         }
     }
 
     private fun handleGoBack() {
         val service = ensureAccessibilityService() ?: return
         service.pressBack()
-        respond("Đã quay lại", "QUAY LẠI")
+        respondWithBeep("Đã quay lại", "QUAY LẠI")
     }
 
     private fun handleGoHome() {
         val service = ensureAccessibilityService() ?: return
         service.goHome()
-        respond("Đã về màn hình chính", "TRANG CHỦ")
+        respondWithBeep("Đã về màn hình chính", "TRANG CHỦ")
     }
 
     // =========================================================================
-    // 3. ĐIỀU KHIỂN ÂM LƯỢNG & PHẦN CỨNG
+    // 3. ĐIỀU KHIỂN ÂM LƯỢNG (LOA MEDIA) & PHẦN CỨNG
     // =========================================================================
     private fun handleVolume(action: Command.VolumeAction) {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         when (action) {
             Command.VolumeAction.UP -> {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
-                respond("Đã tăng âm lượng", "ÂM LƯỢNG")
+                respondWithBeep("Đã tăng âm lượng", "ÂM LƯỢNG")
             }
             Command.VolumeAction.DOWN -> {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
-                respond("Đã giảm âm lượng", "ÂM LƯỢNG")
+                respondWithBeep("Đã giảm âm lượng", "ÂM LƯỢNG")
             }
             Command.VolumeAction.MUTE -> {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI)
-                respond("Đã tắt tiếng", "ÂM LƯỢNG")
+                respondWithBeep("Đã tắt tiếng", "ÂM LƯỢNG")
             }
             Command.VolumeAction.UNMUTE -> {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
-                respond("Đã bật lại tiếng", "ÂM LƯỢNG")
+                respondWithBeep("Đã bật lại tiếng", "ÂM LƯỢNG")
             }
         }
     }
@@ -171,21 +202,20 @@ class CommandExecutor(
         val actionText = if (enable) "bật" else "tắt"
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Trên Android 10+ (ColorOS 15), mở bảng cài đặt nhanh Wi-Fi
                 val intent = Intent(Settings.Panel.ACTION_WIFI).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
-                respond("Đã mở bảng điều khiển Wi-Fi để bạn $actionText", "WIFI")
+                respondWithBeep("Đã mở bảng điều khiển Wi-Fi", "WIFI")
             } else {
                 @Suppress("DEPRECATION")
                 val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 @Suppress("DEPRECATION")
                 wifiManager?.isWifiEnabled = enable
-                respond("Đã $actionText Wi-Fi", "WIFI")
+                respondWithBeep("Đã $actionText Wi-Fi", "WIFI")
             }
         } catch (e: Exception) {
-            respond("Không thể thay đổi Wi-Fi tự động, vui lòng dùng bảng cài đặt.", "WIFI")
+            respondWithVoice("Không thể thay đổi Wi-Fi tự động", "WIFI")
         }
     }
 
@@ -196,23 +226,22 @@ class CommandExecutor(
             val adapter = bluetoothManager?.adapter
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+ yêu cầu người dùng xác nhận qua Settings
                 val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
-                respond("Đã mở cài đặt Bluetooth để bạn $actionText", "BLUETOOTH")
+                respondWithBeep("Đã mở cài đặt Bluetooth", "BLUETOOTH")
             } else {
                 @Suppress("DEPRECATION")
                 if (enable) adapter?.enable() else adapter?.disable()
-                respond("Đã $actionText Bluetooth", "BLUETOOTH")
+                respondWithBeep("Đã $actionText Bluetooth", "BLUETOOTH")
             }
         } catch (e: Exception) {
             val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
-            respond("Đã mở cài đặt Bluetooth", "BLUETOOTH")
+            respondWithBeep("Đã mở cài đặt Bluetooth", "BLUETOOTH")
         }
     }
 
@@ -221,17 +250,17 @@ class CommandExecutor(
             val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
             val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return
             cameraManager.setTorchMode(cameraId, enable)
-            respond(if (enable) "Đã bật đèn pin" else "Đã tắt đèn pin", "ĐÈN PIN")
+            respondWithBeep(if (enable) "Đã bật đèn pin" else "Đã tắt đèn pin", "ĐÈN PIN")
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi điều khiển đèn pin", e)
-            respond("Không thể điều khiển đèn pin lúc này: ${e.localizedMessage}", "LỖI")
+            respondWithVoice("Không thể điều khiển đèn pin lúc này: ${e.localizedMessage}", "LỖI")
         }
     }
 
     private fun handleLockScreen() {
         val service = JavisAccessibilityService.instance
         if (service != null && service.lockScreen()) {
-            respond("Đang khóa màn hình", "KHÓA MÁY")
+            respondWithBeep("Đang khóa màn hình", "KHÓA MÁY")
             return
         }
 
@@ -239,10 +268,10 @@ class CommandExecutor(
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
         val adminComponent = ComponentName(context, JavisDeviceAdminReceiver::class.java)
         if (dpm != null && dpm.isAdminActive(adminComponent)) {
-            respond("Đang khóa màn hình qua Device Admin", "KHÓA MÁY")
+            respondWithBeep("Đang khóa màn hình", "KHÓA MÁY")
             dpm.lockNow()
         } else {
-            respond("Vui lòng bật quyền Trợ năng hoặc Quản trị viên thiết bị để khóa màn hình.", "KHÓA MÁY")
+            respondWithVoice("Bạn chưa bật quyền Trợ năng cho JAVIS để khóa màn hình.", "KHÓA MÁY")
             PermissionHelper.openAccessibilitySettings(context)
         }
     }
@@ -251,9 +280,9 @@ class CommandExecutor(
         val service = ensureAccessibilityService() ?: return
         val ok = service.takeScreenshot()
         if (ok) {
-            respond("Đã chụp ảnh màn hình", "CHỤP MÀN HÌNH")
+            respondWithBeep("Đã chụp ảnh màn hình", "CHỤP MÀN HÌNH")
         } else {
-            respond("Không thể chụp ảnh màn hình lúc này", "LỖI")
+            respondWithVoice("Không thể chụp ảnh màn hình lúc này", "LỖI")
         }
     }
 
@@ -262,17 +291,17 @@ class CommandExecutor(
     // =========================================================================
     private fun handleGetTime() {
         val timeString = AppHelper.getFormattedTimeVi()
-        respond(timeString, "XEM GIỜ")
+        respondWithVoice(timeString, "XEM GIỜ")
     }
 
     private fun handleGetDate() {
         val dateString = AppHelper.getFormattedDateVi()
-        respond(dateString, "XEM NGÀY")
+        respondWithVoice(dateString, "XEM NGÀY")
     }
 
     private fun handleSetTimer(totalSeconds: Int, label: String) {
         activeTimer?.cancel()
-        respond("Đã hẹn giờ $label, bắt đầu đếm ngược ngay bây giờ.", "HẸN GIỜ")
+        respondWithVoice("Đã hẹn giờ $label, bắt đầu đếm ngược ngay bây giờ.", "HẸN GIỜ")
 
         activeTimer = object : CountDownTimer(totalSeconds * 1000L, 1000L) {
             override fun onTick(millisUntilFinished: Long) {}
@@ -295,21 +324,21 @@ class CommandExecutor(
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
-            respond("Đã mở đặt báo thức lúc $hour giờ $minute phút.", "BÁO THỨC")
+            respondWithVoice("Đã mở đặt báo thức lúc $hour giờ $minute phút.", "BÁO THỨC")
         } catch (e: Exception) {
-            respond("Không thể đặt báo thức tự động: ${e.localizedMessage}", "LỖI")
+            respondWithVoice("Không thể đặt báo thức tự động: ${e.localizedMessage}", "LỖI")
         }
     }
 
     private fun handleMakeCall(contactName: String) {
         val contact = AppHelper.findContactByName(context, contactName)
         if (contact == null) {
-            respond("Không tìm thấy số điện thoại của \"$contactName\" trong danh bạ.", "CUỘC GỌI")
+            respondWithVoice("Không tìm thấy số điện thoại của \"$contactName\" trong danh bạ.", "CUỘC GỌI")
             return
         }
 
         val (name, number) = contact
-        respond("Đang gọi cho $name số $number", "CUỘC GỌI")
+        respondWithVoice("Đang gọi cho $name số $number", "CUỘC GỌI")
 
         val callIntent = Intent(Intent.ACTION_CALL).apply {
             data = Uri.parse("tel:$number")
@@ -319,7 +348,6 @@ class CommandExecutor(
         try {
             context.startActivity(callIntent)
         } catch (e: SecurityException) {
-            // Chưa có quyền CALL_PHONE -> mở bàn phím quay số DIAL
             val dialIntent = Intent(Intent.ACTION_DIAL).apply {
                 data = Uri.parse("tel:$number")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -341,9 +369,9 @@ class CommandExecutor(
         try {
             context.startActivity(smsIntent)
             val toWhom = contact?.first ?: contactName
-            respond("Đã mở tin nhắn gửi cho $toWhom với nội dung soạn sẵn.", "TIN NHẮN")
+            respondWithVoice("Đã mở tin nhắn gửi cho $toWhom với nội dung soạn sẵn.", "TIN NHẮN")
         } catch (e: Exception) {
-            respond("Không thể mở ứng dụng tin nhắn: ${e.localizedMessage}", "LỖI")
+            respondWithVoice("Không thể mở ứng dụng tin nhắn: ${e.localizedMessage}", "LỖI")
         }
     }
 
@@ -354,8 +382,8 @@ class CommandExecutor(
         when (custom.actionType) {
             CustomCommand.ACTION_OPEN_APP -> {
                 val (ok, appName) = AppHelper.openAppByName(context, custom.targetParam)
-                if (ok) respond("Đang mở $appName theo lệnh của bạn", "LỆNH TÙY CHỈNH")
-                else respond("Chưa cài ${custom.targetParam} trên máy", "LỖI")
+                if (ok) respondWithBeep("Đang mở $appName theo lệnh tùy chỉnh", "LỆNH TÙY CHỈNH")
+                else respondWithVoice("Chưa cài ${custom.targetParam} trên máy này", "LỖI")
             }
             CustomCommand.ACTION_SCROLL_UP -> handleScrollUp()
             CustomCommand.ACTION_SCROLL_DOWN -> handleScrollDown()
@@ -368,7 +396,7 @@ class CommandExecutor(
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
-                respond("Đang mở liên kết trang web", "MỞ LIÊN KẾT")
+                respondWithBeep("Đang mở liên kết trang web", "MỞ LIÊN KẾT")
             }
         }
     }
@@ -378,13 +406,13 @@ class CommandExecutor(
         scope.launch {
             val response = openAiClient.askAi(prompt)
             withContext(Dispatchers.Main) {
-                respond(response, "AI")
+                respondWithVoice(response, "AI")
             }
         }
     }
 
     private fun handleUnknown(rawText: String) {
-        respond("Tôi chưa hiểu câu lệnh này. Bạn hãy vào Cài đặt để thêm lệnh tùy chỉnh nhé!", "CHƯA HIỂU")
+        respondWithVoice("Tôi chưa hiểu câu lệnh này. Bạn hãy vào Cài đặt để thêm lệnh tùy chỉnh nhé!", "CHƯA HIỂU")
     }
 
     companion object {

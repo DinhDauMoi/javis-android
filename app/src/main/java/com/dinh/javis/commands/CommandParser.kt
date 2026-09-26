@@ -5,8 +5,17 @@ import com.dinh.javis.utils.TextNormalizer
 import java.util.regex.Pattern
 
 /**
- * Trình phân tích cú pháp câu nói người dùng thành đối tượng Command
- * Hỗ trợ nhận diện tiếng Việt có dấu, không dấu và loại bỏ các từ đệm tự nhiên.
+ * Trình phân tích cú pháp câu nói người dùng thành đối tượng Command.
+ * Hỗ trợ nhận diện tiếng Việt có dấu, không dấu ("tang am luong" = "tăng âm lượng")
+ * và loại bỏ các từ đệm tự nhiên ("ê javis lướt lên dùm", "javis lướt lên" -> "lướt lên").
+ *
+ * Config sẵn các câu lệnh tiêu chuẩn theo Prompt v4:
+ * - "lướt lên", "vuốt lên", "cuộn lên": xem video tiếp theo (scroll forward / swipe up)
+ * - "lướt xuống", "vuốt xuống", "cuộn xuống": xem video trước đó (scroll backward / swipe down)
+ * - "mở youtube": mở com.google.android.youtube
+ * - "mở tiktok", "mở tik tok": mở com.zhiliaoapp.musically
+ * - "tăng âm lượng", "to lên", "âm lượng to lên": tăng âm lượng media
+ * - "giảm âm lượng", "nhỏ lại", "nhỏ xuống", "âm lượng nhỏ xuống": giảm âm lượng media
  */
 class CommandParser(private var customCommands: List<CustomCommand> = emptyList()) {
 
@@ -23,7 +32,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.Unknown("")
         }
 
-        // Bỏ từ đệm thừa ("ê javis", "làm ơn", "hộ", "dùm",...)
+        // Bỏ từ đệm và từ đánh thức ("ê javis", "javis", "jarvis", "dùm", "hộ",...)
         val cleanInput = TextNormalizer.stripFillerWords(trimmed)
         val normalized = TextNormalizer.removeAccents(cleanInput)
 
@@ -35,15 +44,13 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-        // 2. Điều khiển cử chỉ cuộn / lướt (TikTok, Facebook, YouTube Shorts, v.v.)
+        // 2. Điều khiển cử chỉ cuộn / lướt (TikTok, Facebook Reels, YouTube Shorts, v.v.)
         //
-        // QUY ƯỚC:
-        //   "lướt lên"   = xem video/nội dung TIẾP THEO phía dưới   → ScrollUp  (vuốt ngón tay lên)
-        //   "lướt xuống" = xem video/nội dung TRƯỚC ĐÓ phía trên   → ScrollDown (vuốt ngón tay xuống)
-        //
-        // Các từ đồng nghĩa nhận được (có dấu và không dấu):
-        if (normalized.contains("luot len") || normalized.contains("cuon len") ||
-            normalized.contains("vuot len") || normalized.contains("next") ||
+        // QUY ƯỚC CHIỀU LƯỚT:
+        //   "lướt lên", "vuốt lên", "cuộn lên" = xem nội dung mới phía dưới (giống vuốt ngón tay từ dưới lên)
+        //   "lướt xuống", "vuốt xuống", "cuộn xuống" = xem nội dung trước đó phía trên (vuốt từ trên xuống)
+        if (normalized.contains("luot len") || normalized.contains("vuot len") ||
+            normalized.contains("cuon len") || normalized.contains("next") ||
             normalized.contains("video tiep") || normalized.contains("tiep theo") ||
             normalized.contains("next video") || normalized.contains("sang video") ||
             normalized.contains("xem tiep") || normalized == "len"
@@ -51,49 +58,46 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.ScrollUp
         }
 
-        if (normalized.contains("luot xuong") || normalized.contains("cuon xuong") ||
-            normalized.contains("vuot xuong") || normalized.contains("previous") ||
+        if (normalized.contains("luot xuong") || normalized.contains("vuot xuong") ||
+            normalized.contains("cuon xuong") || normalized.contains("previous") ||
             normalized.contains("video truoc") || normalized.contains("quay lai video") ||
             normalized.contains("xem lai") || normalized == "xuong"
         ) {
             return Command.ScrollDown
         }
 
-        // 3. Bấm nút theo text hiển thị
-        val clickRegex = Pattern.compile("^(?:bam|nhan|click|cham|an|chon)(?: vao)?(?: nut)?\\s+(.+)$", Pattern.CASE_INSENSITIVE)
-        val clickMatcher = clickRegex.matcher(normalized)
-        if (clickMatcher.find()) {
-            val buttonText = clickMatcher.group(1)?.trim() ?: ""
-            if (buttonText.isNotEmpty()) {
-                return Command.ClickButton(buttonText)
-            }
+        // 3. Mở nhanh YouTube và TikTok theo đúng từ khóa quy định
+        if (normalized.contains("mo youtube") || normalized == "youtube" || normalized == "you tube") {
+            return Command.OpenApp("youtube")
         }
-
-        // 4. Điều hướng Back & Home
-        if (normalized.contains("quay lai") || normalized.contains("tro ve") || normalized == "back") {
-            return Command.GoBack
-        }
-        if (normalized.contains("ve man hinh chinh") || normalized.contains("ve trang chu") ||
-            normalized.contains("ve home") || normalized == "man hinh chinh" || normalized == "home"
+        if (normalized.contains("mo tiktok") || normalized.contains("mo tik tok") ||
+            normalized == "tiktok" || normalized == "tik tok"
         ) {
-            return Command.GoHome
+            return Command.OpenApp("tiktok")
         }
 
-        // 5. Điều khiển âm lượng — nhận cả có dấu và không dấu
+        // 4. Điều khiển âm lượng (Nhận cả có dấu và không dấu)
+        // Lệnh tăng âm lượng: "tăng âm lượng", "to lên", "âm lượng to lên",...
         if (normalized.contains("tang am luong") || normalized.contains("tang am") ||
-            normalized.contains("am luong len") || normalized.contains("to len") ||
-            normalized.contains("bat tieng to hon") || normalized.contains("lon hon") ||
-            normalized.contains("volume up") || normalized.contains("louder")
+            normalized.contains("am luong to len") || normalized.contains("to len") ||
+            normalized.contains("cho to len") || normalized.contains("bat to len") ||
+            normalized.contains("am luong len") || normalized.contains("to hon") ||
+            normalized.contains("lon hon") || normalized.contains("volume up") || normalized.contains("louder")
         ) {
             return Command.ChangeVolume(Command.VolumeAction.UP)
         }
+
+        // Lệnh giảm âm lượng: "giảm âm lượng", "nhỏ lại", "nhỏ xuống", "âm lượng nhỏ xuống",...
         if (normalized.contains("giam am luong") || normalized.contains("giam am") ||
-            normalized.contains("am luong xuong") || normalized.contains("nho lai") ||
-            normalized.contains("cho tieng nho lai") || normalized.contains("nho hon") ||
+            normalized.contains("am luong nho xuong") || normalized.contains("nho xuong") ||
+            normalized.contains("nho lai") || normalized.contains("cho nho lai") ||
+            normalized.contains("am luong nho lai") || normalized.contains("am luong xuong") ||
+            normalized.contains("nho hon") || normalized.contains("be lai") ||
             normalized.contains("volume down") || normalized.contains("quieter")
         ) {
             return Command.ChangeVolume(Command.VolumeAction.DOWN)
         }
+
         if (normalized.contains("tat tieng") || normalized.contains("im lang") ||
             normalized.contains("mute") || normalized.contains("tat am")
         ) {
@@ -105,7 +109,27 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.ChangeVolume(Command.VolumeAction.UNMUTE)
         }
 
-        // 6. Điều khiển kết nối & thiết bị (Wifi, Bluetooth, Đèn pin, Khóa màn hình)
+        // 5. Bấm nút theo text hiển thị
+        val clickRegex = Pattern.compile("^(?:bam|nhan|click|cham|an|chon)(?: vao)?(?: nut)?\\s+(.+)$", Pattern.CASE_INSENSITIVE)
+        val clickMatcher = clickRegex.matcher(normalized)
+        if (clickMatcher.find()) {
+            val buttonText = clickMatcher.group(1)?.trim() ?: ""
+            if (buttonText.isNotEmpty()) {
+                return Command.ClickButton(buttonText)
+            }
+        }
+
+        // 6. Điều hướng Back & Home
+        if (normalized.contains("quay lai") || normalized.contains("tro ve") || normalized == "back") {
+            return Command.GoBack
+        }
+        if (normalized.contains("ve man hinh chinh") || normalized.contains("ve trang chu") ||
+            normalized.contains("ve home") || normalized == "man hinh chinh" || normalized == "home"
+        ) {
+            return Command.GoHome
+        }
+
+        // 7. Điều khiển kết nối & thiết bị (Wifi, Bluetooth, Đèn pin, Khóa màn hình)
         if (normalized.contains("bat wifi")) return Command.ToggleWifi(true)
         if (normalized.contains("tat wifi")) return Command.ToggleWifi(false)
 
@@ -123,7 +147,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.TakeScreenshot
         }
 
-        // 7. Tiện ích thời gian & ngày tháng
+        // 8. Tiện ích thời gian & ngày tháng
         if (normalized.contains("may gio") || normalized.contains("xem gio") || normalized.contains("bay gio la may gio")) {
             return Command.GetTime
         }
@@ -131,7 +155,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.GetDate
         }
 
-        // 8. Hẹn giờ đếm ngược: "hẹn giờ 10 giây", "hẹn giờ 5 phút", "đếm ngược 30 giây"
+        // 9. Hẹn giờ đếm ngược: "hẹn giờ 10 giây", "hẹn giờ 5 phút", "đếm ngược 30 giây"
         val timerRegex = Pattern.compile("(?:hen gio|dem nguoc)\\s+(\\d+)\\s*(phut|giay|s|m)?", Pattern.CASE_INSENSITIVE)
         val timerMatcher = timerRegex.matcher(normalized)
         if (timerMatcher.find()) {
@@ -143,7 +167,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-        // 9. Đặt báo thức: "đặt báo thức 6 giờ", "đặt báo thức 7 giờ 30", "báo thức lúc 6h15"
+        // 10. Đặt báo thức: "đặt báo thức 6 giờ", "đặt báo thức 7 giờ 30", "báo thức lúc 6h15"
         val alarmRegex = Pattern.compile("(?:dat bao thuc|bao thuc|hen bao thuc)(?: luc)?\\s+(\\d+)(?:\\s*gio|h)(?:\\s*(\\d+))?", Pattern.CASE_INSENSITIVE)
         val alarmMatcher = alarmRegex.matcher(normalized)
         if (alarmMatcher.find()) {
@@ -152,7 +176,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.SetAlarm(hour, minute)
         }
 
-        // 10. Gọi điện: "gọi cho Mẹ", "gọi điện cho Nam", "gọi Lan"
+        // 11. Gọi điện: "gọi cho Mẹ", "gọi điện cho Nam", "gọi Lan"
         val callRegex = Pattern.compile("^(?:goi dien cho|goi cho|goi)\\s+(.+)$", Pattern.CASE_INSENSITIVE)
         val callMatcher = callRegex.matcher(normalized)
         if (callMatcher.find()) {
@@ -162,7 +186,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-        // 11. Nhắn tin: "nhắn tin cho [tên]: [nội dung]" hoặc "nhắn [tên] [nội dung]"
+        // 12. Nhắn tin: "nhắn tin cho [tên]: [nội dung]" hoặc "nhắn [tên] [nội dung]"
         val smsRegex = Pattern.compile("^(?:nhan tin cho|nhan tin|gui tin nhan cho)\\s+([^:]+)(?::|noi dung|la)\\s*(.*)$", Pattern.CASE_INSENSITIVE)
         val smsMatcher = smsRegex.matcher(cleanInput)
         if (smsMatcher.find()) {
@@ -173,7 +197,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-        // 12. Mở ứng dụng: "mở tiktok", "mở youtube", "mở zalo", "mở camera",...
+        // 13. Mở ứng dụng chung: "mở zalo", "mở chrome", "mở camera",...
         val openAppRegex = Pattern.compile("^(?:mo|khoi dong|chay app|vao app|vao)\\s+(.+)$", Pattern.CASE_INSENSITIVE)
         val openAppMatcher = openAppRegex.matcher(cleanInput)
         if (openAppMatcher.find()) {
@@ -183,7 +207,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-        // 13. Mặc định: Gửi cho AI trả lời thông minh
+        // 14. Mặc định: Gửi cho AI trả lời thông minh
         return Command.AskAi(trimmed)
     }
 }
