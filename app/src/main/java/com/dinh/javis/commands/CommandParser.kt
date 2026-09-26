@@ -66,14 +66,40 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.ScrollDown
         }
 
-        // 3. Mở nhanh YouTube và TikTok theo đúng từ khóa quy định
-        if (normalized.contains("mo youtube") || normalized == "youtube" || normalized == "you tube") {
+        // 3. Mở nhanh các ứng dụng phổ biến và mở theo từ khóa "mở" + tên app (chấp nhận chứa từ khóa, không dấu, chữ thường)
+        if (normalized.contains("youtube") || normalized.contains("you tube")) {
             return Command.OpenApp("youtube")
         }
-        if (normalized.contains("mo tiktok") || normalized.contains("mo tik tok") ||
-            normalized == "tiktok" || normalized == "tik tok"
-        ) {
+        if (normalized.contains("tiktok") || normalized.contains("tik tok")) {
             return Command.OpenApp("tiktok")
+        }
+        if (normalized.contains("facebook") || normalized.contains("face book") || normalized.contains(" fb")) {
+            return Command.OpenApp("facebook")
+        }
+        if (normalized.contains("zalo")) {
+            return Command.OpenApp("zalo")
+        }
+        if (normalized.contains("chrome") || normalized.contains("trinh duyet")) {
+            return Command.OpenApp("chrome")
+        }
+        if (normalized.contains("camera") || normalized.contains("may anh")) {
+            return Command.OpenApp("camera")
+        }
+        if (normalized.contains("cai dat") || normalized.contains("settings")) {
+            return Command.OpenApp("settings")
+        }
+        if (normalized.contains("tin nhan") && !normalized.contains("nhan tin cho")) {
+            return Command.OpenApp("messages")
+        }
+
+        // Chấp nhận chứa từ khóa ("mở" / "vào" / "khởi động" + tên app) thay vì khớp tuyệt đối
+        val openAppRegex = Pattern.compile("(?:mo|khoi dong|chay app|chay|vao app|vao|open)\\s+([a-zA-Z0-9_\\s]+)", Pattern.CASE_INSENSITIVE)
+        val openAppMatcher = openAppRegex.matcher(normalized)
+        if (openAppMatcher.find()) {
+            val appTarget = openAppMatcher.group(1)?.trim() ?: ""
+            if (appTarget.isNotEmpty() && !appTarget.contains("den pin") && !appTarget.contains("wifi") && !appTarget.contains("bluetooth") && !appTarget.contains("am luong")) {
+                return Command.OpenApp(appTarget)
+            }
         }
 
         // 4. Điều khiển âm lượng (Nhận cả có dấu và không dấu)
@@ -197,15 +223,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-        // 13. Mở ứng dụng chung: "mở zalo", "mở chrome", "mở camera",...
-        val openAppRegex = Pattern.compile("^(?:mo|khoi dong|chay app|vao app|vao)\\s+(.+)$", Pattern.CASE_INSENSITIVE)
-        val openAppMatcher = openAppRegex.matcher(cleanInput)
-        if (openAppMatcher.find()) {
-            val appTarget = openAppMatcher.group(1)?.trim() ?: ""
-            if (appTarget.isNotEmpty()) {
-                return Command.OpenApp(appTarget)
-            }
-        }
+
 
         // 14. Mặc định: Gửi cho AI trả lời thông minh
         return Command.AskAi(trimmed)

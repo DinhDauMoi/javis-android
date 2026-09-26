@@ -12,6 +12,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.dinh.javis.commands.Command
+import com.dinh.javis.commands.CommandParser
 import com.dinh.javis.data.PreferenceManager
 import com.dinh.javis.utils.PermissionHelper
 import com.openwakeword.OpenWakeWord
@@ -35,6 +37,7 @@ class HotwordManager(
     private val context: Context,
     private val speaker: Speaker,
     private val preferenceManager: PreferenceManager,
+    private val commandParser: CommandParser,
     private val onCommandRecognized: (String) -> Unit,
     private val onStatusChange: (statusText: String, isListeningCommand: Boolean, isWaitingHotword: Boolean) -> Unit,
     private val onLogMessage: (String, Boolean, String?) -> Unit
@@ -49,6 +52,10 @@ class HotwordManager(
     @Volatile private var isListeningCommand = false       // Đang chạy SpeechRecognizer nghe 1 lệnh
     @Volatile private var isPausedForTts = false          // Đang tạm dừng cho TTS nói
 
+    // Đếm số lần thử nghe lại khi không phát hiện tiếng nói (tối đa 1 lần thử lại)
+    private var commandRetryCount = 0
+    private val MAX_COMMAND_RETRIES = 1
+
     // Debounce chống lặp lệnh trong vòng 1 giây (1000ms)
     private var lastCommandText = ""
     private var lastCommandTime = 0L
@@ -57,9 +64,7 @@ class HotwordManager(
     // Timeout 6 giây cho 1 lệnh nói
     private val COMMAND_TIMEOUT_MS = 6000L
     private val commandTimeoutRunnable = Runnable {
-        Log.w(TAG, "Hết thời gian chờ lệnh (6 giây) — quay lại chờ wake word")
-        cancelCommandListening()
-        resumeHotwordDetector()
+        handleCommandTimeoutOrNoSpeech("Hết thời gian chờ lệnh (6 giây)")
     }
 
     init {
@@ -115,6 +120,7 @@ class HotwordManager(
 
         // Dừng và hủy SpeechRecognizer
         cancelCommandListening()
+        destroySpeechRecognizer()
 
         // Dừng foreground service
         HotwordService.stop(context)
@@ -130,7 +136,15 @@ class HotwordManager(
         if (!isRunning) {
             start()
         }
-        onWakeWordTriggered()
+        pauseHotwordDetector()
+        speaker.playWakeBeep()
+        onStatusChange("Đang kích hoạt...", true, false)
+        mainHandler.postDelayed({
+            if (isRunning && !isListeningCommand && !isPausedForTts) {
+                commandRetryCount = 0
+                startCommandListening()
+            }
+        }, 420L)
     }
 
     // =========================================================================
@@ -269,26 +283,56 @@ class HotwordManager(
     private fun onWakeWordTriggered() {
         if (!isRunning || isListeningCommand) return
 
-        Log.i(TAG, "Bắt được 'javis' -> Phát âm thanh thức dậy và lắng nghe 1 lệnh (6s)")
+        Log.i(TAG, "Bắt được 'javis' -> Phát âm thanh thức dậy và chờ beep xong + 300ms")
 
         // 1. Tạm dừng ngay wake word detector để nhường mic cho SpeechRecognizer
         pauseHotwordDetector()
 
-        // 2. Phát beep ngắn (hoặc tone) thức dậy
+        // 2. Phát beep ngắn (120ms)
         speaker.playWakeBeep()
+        onStatusChange("Đang kích hoạt...", true, false)
 
-        // 3. Bật SpeechRecognizer nghe đúng 1 lệnh (timeout 6 giây)
-        startCommandListening()
+        // 3. Chờ beep phát xong (120ms) + 300ms = 420ms rồi mới bật SpeechRecognizer (tránh beep lấn mất chữ đầu)
+        mainHandler.postDelayed({
+            if (isRunning && !isListeningCommand && !isPausedForTts) {
+                commandRetryCount = 0
+                startCommandListening()
+            }
+        }, 420L)
+    }
+
+    private fun getOrCreateSpeechRecognizer(): SpeechRecognizer? {
+        if (speechRecognizer == null) {
+            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                Log.e(TAG, "SpeechRecognizer không khả dụng trên thiết bị")
+                return null
+            }
+            try {
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                    setRecognitionListener(createCommandRecognitionListener())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi khởi tạo SpeechRecognizer", e)
+                return null
+            }
+        }
+        return speechRecognizer
+    }
+
+    private fun destroySpeechRecognizer() {
+        try {
+            speechRecognizer?.destroy()
+        } catch (e: Exception) { /* bỏ qua */ }
+        speechRecognizer = null
     }
 
     private fun startCommandListening() {
         isListeningCommand = true
-        onStatusChange("Đang nghe lệnh (6s)...", true, false)
-        HotwordService.start(context, "Đang nghe lệnh nói...")
+        onStatusChange("🎙️ ĐANG NGHE... BẠN NÓI ĐI!", true, false)
+        HotwordService.start(context, "🎙️ Đang nghe lệnh...")
 
-        destroySpeechRecognizer()
-
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+        val recognizer = getOrCreateSpeechRecognizer()
+        if (recognizer == null) {
             Log.e(TAG, "SpeechRecognizer không khả dụng trên thiết bị")
             onLogMessage("Thiết bị chưa cài Google Speech Engine", false, "LỖI")
             speaker.speak("Chưa cài Google Speech trên máy này")
@@ -297,31 +341,44 @@ class HotwordManager(
             return
         }
 
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "vi-VN")
+            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+
+            // Rút ngắn thời gian chờ kết thúc câu (500ms thay vì 1500ms mặc định)
+            putExtra("android.speech.extras.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 500L)
+            putExtra("android.speech.extras.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
+            putExtra("android.speech.extras.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS", 1000L)
+
+            // Thử ưu tiên nhận diện offline nếu máy đã tải gói tiếng Việt offline
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        }
+
         try {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                setRecognitionListener(createCommandRecognitionListener())
-            }
+            recognizer.startListening(intent)
 
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN")
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "vi-VN")
-                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            }
-
-            speechRecognizer?.startListening(intent)
-
-            // Đặt lịch timeout 6 giây tự động hủy nếu người dùng không nói gì
+            // Đặt lịch timeout 6 giây tự động xử lý nếu người dùng không nói gì
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             mainHandler.postDelayed(commandTimeoutRunnable, COMMAND_TIMEOUT_MS)
 
             Log.d(TAG, "SpeechRecognizer đã bắt đầu lắng nghe lệnh (hẹn giờ 6s)")
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khởi động SpeechRecognizer", e)
-            isListeningCommand = false
-            resumeHotwordDetector()
+            Log.e(TAG, "Lỗi startListening, thử tạo lại recognizer", e)
+            destroySpeechRecognizer()
+            val retryRec = getOrCreateSpeechRecognizer()
+            try {
+                retryRec?.startListening(intent)
+                mainHandler.removeCallbacks(commandTimeoutRunnable)
+                mainHandler.postDelayed(commandTimeoutRunnable, COMMAND_TIMEOUT_MS)
+            } catch (e2: Exception) {
+                Log.e(TAG, "Thất bại khi retry startListening", e2)
+                isListeningCommand = false
+                resumeHotwordDetector()
+            }
         }
     }
 
@@ -332,23 +389,42 @@ class HotwordManager(
             speechRecognizer?.stopListening()
             speechRecognizer?.cancel()
         } catch (e: Exception) { /* bỏ qua */ }
-        destroySpeechRecognizer()
     }
 
-    private fun destroySpeechRecognizer() {
-        try {
-            speechRecognizer?.destroy()
-        } catch (e: Exception) { /* bỏ qua */ }
-        speechRecognizer = null
+    private fun handleCommandTimeoutOrNoSpeech(reason: String) {
+        mainHandler.removeCallbacks(commandTimeoutRunnable)
+        if (commandRetryCount < MAX_COMMAND_RETRIES && isRunning) {
+            commandRetryCount++
+            Log.w(TAG, "$reason -> Beep báo và nghe lại lần thứ $commandRetryCount")
+            onStatusChange("Chưa nghe rõ, đang nghe lại...", true, false)
+            onLogMessage("⚠️ Chưa nghe rõ câu lệnh, đang thử nghe lại...", false, "THỬ LẠI")
+
+            // Beep báo và nghe lại 1 lần nữa thay vì ngủ luôn
+            speaker.playWakeBeep()
+            try { speechRecognizer?.cancel() } catch (_: Exception) {}
+
+            mainHandler.postDelayed({
+                if (isRunning && !isPausedForTts) {
+                    startCommandListening()
+                }
+            }, 450L)
+        } else {
+            Log.w(TAG, "$reason -> Đã hết lượt nghe lại, quay lại chờ wake word")
+            commandRetryCount = 0
+            cancelCommandListening()
+            resumeHotwordDetector(delayMs = 300)
+        }
     }
 
     private fun createCommandRecognitionListener() = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
             Log.d(TAG, "SpeechRecognizer sẵn sàng nhận giọng nói lệnh")
+            onStatusChange("🎙️ SẴN SÀNG! MỜI BẠN NÓI...", true, false)
         }
 
         override fun onBeginningOfSpeech() {
             Log.d(TAG, "Phát hiện người dùng bắt đầu nói lệnh")
+            onStatusChange("🎙️ Đang thu âm câu lệnh...", true, false)
         }
 
         override fun onRmsChanged(rmsdB: Float) {}
@@ -358,31 +434,38 @@ class HotwordManager(
         override fun onEndOfSpeech() {
             Log.d(TAG, "Người dùng đã dứt câu — đang nhận diện kết quả...")
             mainHandler.removeCallbacks(commandTimeoutRunnable)
+            onStatusChange("Đang nhận diện...", true, false)
         }
 
         override fun onError(errorCode: Int) {
             mainHandler.removeCallbacks(commandTimeoutRunnable)
-            isListeningCommand = false
-            destroySpeechRecognizer()
-
             val errorMsg = describeSpeechError(errorCode)
-            Log.w(TAG, "SpeechRecognizer lỗi ($errorCode): $errorMsg")
+            Log.w(TAG, "SpeechRecognizer báo lỗi ($errorCode): $errorMsg")
 
-            // Quay lại chờ wake word
-            resumeHotwordDetector(delayMs = 400)
+            // Nếu timeout hoặc không nghe rõ, beep và thử lại 1 lần nữa thay vì ngủ luôn
+            if (errorCode == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || errorCode == SpeechRecognizer.ERROR_NO_MATCH) {
+                handleCommandTimeoutOrNoSpeech("Không nhận diện được giọng nói ($errorMsg)")
+            } else {
+                commandRetryCount = 0
+                isListeningCommand = false
+                if (errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || errorCode == SpeechRecognizer.ERROR_CLIENT) {
+                    destroySpeechRecognizer()
+                }
+                resumeHotwordDetector(delayMs = 400)
+            }
         }
 
         override fun onResults(results: Bundle?) {
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             isListeningCommand = false
-            destroySpeechRecognizer()
 
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = matches?.firstOrNull()?.trim() ?: ""
 
-            Log.d(TAG, "Nhận diện lệnh thành công: \"$text\"")
+            Log.d(TAG, "Nhận diện lệnh thành công (final): \"$text\"")
 
             if (text.isNotEmpty()) {
+                commandRetryCount = 0
                 val now = System.currentTimeMillis()
                 // Debounce 1 giây: Bỏ qua nếu lệnh trùng lặp trong vòng 1s
                 if (text.equals(lastCommandText, ignoreCase = true) && (now - lastCommandTime < DEBOUNCE_MS)) {
@@ -392,6 +475,9 @@ class HotwordManager(
                     lastCommandTime = now
                     onCommandRecognized(text)
                 }
+            } else {
+                handleCommandTimeoutOrNoSpeech("Không có từ nào trong kết quả nhận diện")
+                return
             }
 
             // Nếu không có TTS đang nói thì resume wake word ngay sau 400ms
@@ -404,7 +490,28 @@ class HotwordManager(
             val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val partial = matches?.firstOrNull()?.trim() ?: ""
             if (partial.isNotEmpty()) {
-                onStatusChange(partial, true, false)
+                onStatusChange("🎙️ $partial", true, false)
+
+                // TĂNG TỐC ĐỘ NHẬN LỆNH: Ngay khi partial result chứa từ khóa lệnh đã khớp thì thực hiện luôn!
+                val command = commandParser.parse(partial)
+                if (command !is Command.Unknown && command !is Command.AskAi) {
+                    Log.i(TAG, "⚡ Khớp lệnh siêu tốc từ kết quả tạm (partial): \"$partial\" -> Thực thi ngay lập tức!")
+                    mainHandler.removeCallbacks(commandTimeoutRunnable)
+                    isListeningCommand = false
+                    try { speechRecognizer?.stopListening() } catch (_: Exception) {}
+
+                    val now = System.currentTimeMillis()
+                    if (!partial.equals(lastCommandText, ignoreCase = true) || (now - lastCommandTime >= DEBOUNCE_MS)) {
+                        lastCommandText = partial
+                        lastCommandTime = now
+                        commandRetryCount = 0
+                        onCommandRecognized(partial)
+                    }
+
+                    if (!isPausedForTts) {
+                        resumeHotwordDetector(delayMs = 400)
+                    }
+                }
             }
         }
 

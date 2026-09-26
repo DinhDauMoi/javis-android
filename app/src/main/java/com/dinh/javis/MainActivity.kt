@@ -165,6 +165,7 @@ class MainActivity : AppCompatActivity() {
             context = this,
             speaker = speaker,
             preferenceManager = preferenceManager,
+            commandParser = commandParser,
             onCommandRecognized = { text ->
                 runOnUiThread { handleSpokenText(text) }
             },
@@ -250,6 +251,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSpokenText(text: String) {
+        Toast.makeText(this, "JAVIS nghe: \"$text\"", Toast.LENGTH_SHORT).show()
         appendMessage(text, isUser = true)
         binding.tvVoiceStatus.text = getString(R.string.status_processing)
 
