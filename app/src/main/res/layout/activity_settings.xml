@@ -367,6 +367,98 @@
 
             </LinearLayout>
 
+            <!-- Card 5: App Update (GitHub Releases) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="32dp"
+                android:background="@drawable/bg_glass_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cập nhật ứng dụng"
+                    android:textColor="@color/primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="Tự động kiểm tra và cài đặt phiên bản APK mới nhất từ GitHub Releases mà không cần xóa app"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tvCurrentVersion"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="Phiên bản hiện tại: Đang tải..."
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCheckUpdate"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:backgroundTint="@color/primary"
+                    android:text="🔄 KIỂM TRA CẬP NHẬT"
+                    android:textColor="@color/bg_dark"
+                    android:textStyle="bold"
+                    app:cornerRadius="10dp" />
+
+                <!-- Container hiển thị tiến trình tải file APK -->
+                <LinearLayout
+                    android:id="@+id/layoutUpdateProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvUpdateProgress"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="6dp"
+                        android:text="Đang tải: 0%"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/progressBarUpdate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:indeterminate="false"
+                        android:max="100"
+                        android:progress="0"
+                        app:indicatorColor="@color/primary"
+                        app:trackColor="#2A2A2A"
+                        app:trackCornerRadius="4dp"
+                        app:trackThickness="8dp" />
+                </LinearLayout>
+
+                <!-- Nút Cài đặt APK khi tải xong -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnInstallUpdate"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="12dp"
+                    android:backgroundTint="@color/status_green"
+                    android:text="📲 CÀI ĐẶT BẢN CẬP NHẬT"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    app:cornerRadius="10dp" />
+
+            </LinearLayout>
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

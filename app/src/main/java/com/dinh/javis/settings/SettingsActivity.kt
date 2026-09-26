@@ -23,9 +23,12 @@ import com.dinh.javis.utils.TextNormalizer
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
+import java.io.File
+import com.dinh.javis.utils.AppUpdateManager
+
 /**
  * Màn hình Cài đặt của JAVIS
- * Cho phép cấu hình OpenAI API, từ khóa đánh thức, nút mic nổi và quản lý lệnh tùy chỉnh
+ * Cho phép cấu hình OpenAI API, từ khóa đánh thức, nút mic nổi, quản lý lệnh tùy chỉnh và cập nhật ứng dụng
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -33,6 +36,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var preferenceManager: PreferenceManager
     private lateinit var database: AppDatabase
     private lateinit var commandAdapter: CustomCommandAdapter
+    private lateinit var updateManager: AppUpdateManager
+    private var downloadedApkFile: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,12 +46,14 @@ class SettingsActivity : AppCompatActivity() {
 
         preferenceManager = PreferenceManager(this)
         database = AppDatabase.getDatabase(this)
+        updateManager = AppUpdateManager(this)
 
         setupToolbar()
         loadAiSettings()
         setupWakeWordSection()
         setupFloatingMicSection()
         setupCustomCommandsRecycler()
+        setupUpdateSection()
     }
 
     private fun setupToolbar() {
@@ -243,4 +250,100 @@ class SettingsActivity : AppCompatActivity() {
             .setNegativeButton("Hủy", null)
             .show()
     }
+
+    private fun setupUpdateSection() {
+        val currentCode = updateManager.getCurrentVersionCode()
+        val currentName = updateManager.getCurrentVersionName()
+        binding.tvCurrentVersion.text = "Phiên bản hiện tại: v$currentName (Build #$currentCode)"
+
+        binding.btnCheckUpdate.setOnClickListener {
+            checkAppUpdate(isManual = true)
+        }
+
+        binding.btnInstallUpdate.setOnClickListener {
+            downloadedApkFile?.let { file ->
+                updateManager.installApk(this, file)
+            }
+        }
+    }
+
+    private fun checkAppUpdate(isManual: Boolean) {
+        binding.btnCheckUpdate.isEnabled = false
+        binding.btnCheckUpdate.text = "⏳ Đang kiểm tra..."
+
+        lifecycleScope.launch {
+            val result = updateManager.checkForUpdate()
+            binding.btnCheckUpdate.isEnabled = true
+            binding.btnCheckUpdate.text = "🔄 KIỂM TRA CẬP NHẬT"
+
+            result.onSuccess { updateInfo ->
+                if (updateInfo != null) {
+                    showUpdateAvailableDialog(updateInfo)
+                } else {
+                    if (isManual) {
+                        val currentCode = updateManager.getCurrentVersionCode()
+                        AlertDialog.Builder(this@SettingsActivity)
+                            .setTitle("Đã là bản mới nhất")
+                            .setMessage("Ứng dụng JAVIS của bạn đang ở phiên bản mới nhất (Build #$currentCode).")
+                            .setPositiveButton("Đóng", null)
+                            .show()
+                    }
+                }
+            }.onFailure { error ->
+                if (isManual) {
+                    AlertDialog.Builder(this@SettingsActivity)
+                        .setTitle("Kiểm tra cập nhật")
+                        .setMessage("Không thể kiểm tra bản mới: ${error.message}")
+                        .setPositiveButton("Đóng", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun showUpdateAvailableDialog(update: AppUpdateManager.UpdateInfo) {
+        val sizeMb = String.format(Locale.US, "%.1f MB", update.apkSize / (1024f * 1024f))
+        val notes = if (update.releaseNotes.isNotBlank()) "\n\nNội dung mới:\n${update.releaseNotes}" else ""
+
+        AlertDialog.Builder(this)
+            .setTitle("🎉 Có bản cập nhật mới!")
+            .setMessage("Bản dựng: ${update.releaseName} (Build #${update.remoteVersionCode})\nDung lượng: $sizeMb$notes\n\nBạn có muốn tải về và cài đặt ngay không?")
+            .setPositiveButton("Tải & Cài đặt") { _, _ ->
+                startDownloadApk(update)
+            }
+            .setNegativeButton("Để sau", null)
+            .show()
+    }
+
+    private fun startDownloadApk(update: AppUpdateManager.UpdateInfo) {
+        binding.layoutUpdateProgress.visibility = View.VISIBLE
+        binding.progressBarUpdate.progress = 0
+        binding.tvUpdateProgress.text = "Đang chuẩn bị tải..."
+        binding.btnCheckUpdate.isEnabled = false
+        binding.btnInstallUpdate.visibility = View.GONE
+
+        lifecycleScope.launch {
+            val result = updateManager.downloadApk(update.apkDownloadUrl) { percent, downloaded, total ->
+                binding.progressBarUpdate.progress = percent
+                val downMb = String.format(Locale.US, "%.1f", downloaded / (1024f * 1024f))
+                val totalMb = String.format(Locale.US, "%.1f", total / (1024f * 1024f))
+                binding.tvUpdateProgress.text = "Đang tải: $percent% ($downMb MB / $totalMb MB)"
+            }
+
+            binding.btnCheckUpdate.isEnabled = true
+
+            result.onSuccess { apkFile ->
+                downloadedApkFile = apkFile
+                binding.tvUpdateProgress.text = "✅ Đã tải xong! Sẵn sàng cài đặt."
+                binding.btnInstallUpdate.visibility = View.VISIBLE
+                Toast.makeText(this@SettingsActivity, "Tải bản cập nhật thành công! Đang mở cài đặt...", Toast.LENGTH_SHORT).show()
+                // Tự động mở màn hình cài đặt của hệ thống
+                updateManager.installApk(this@SettingsActivity, apkFile)
+            }.onFailure { err ->
+                binding.layoutUpdateProgress.visibility = View.GONE
+                Toast.makeText(this@SettingsActivity, "Tải bản cập nhật thất bại: ${err.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 }
+

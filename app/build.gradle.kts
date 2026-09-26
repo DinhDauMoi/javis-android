@@ -8,12 +8,19 @@ android {
     namespace = "com.dinh.javis"
     compileSdk = 35
 
+    val dynamicVersionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
+        ?: System.getenv("VERSION_CODE")?.toIntOrNull()
+        ?: 1
+    val dynamicVersionName = (project.findProperty("versionName") as? String)
+        ?: System.getenv("VERSION_NAME")
+        ?: "1.0.$dynamicVersionCode"
+
     defaultConfig {
         applicationId = "com.dinh.javis"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = dynamicVersionCode
+        versionName = dynamicVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
