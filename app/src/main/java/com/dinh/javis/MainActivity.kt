@@ -21,7 +21,10 @@ import com.dinh.javis.data.PreferenceManager
 import com.dinh.javis.databinding.ActivityMainBinding
 import com.dinh.javis.settings.SettingsActivity
 import com.dinh.javis.ui.ChatAdapter
+import androidx.appcompat.app.AlertDialog
+import com.dinh.javis.utils.AppUpdateManager
 import com.dinh.javis.utils.PermissionHelper
+import java.util.Locale
 import com.dinh.javis.voice.HotwordManager
 import com.dinh.javis.voice.Speaker
 import kotlinx.coroutines.flow.collectLatest
@@ -73,6 +76,7 @@ class MainActivity : AppCompatActivity() {
         checkAppPermissions()
         handleLaunchIntent(intent)
         observeCustomCommands()
+        checkAppUpdateOnStartup()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -347,6 +351,37 @@ class MainActivity : AppCompatActivity() {
         hotwordManager.stop()
         speaker.shutdown()
         pulseAnimator?.cancel()
+    }
+
+    private fun checkAppUpdateOnStartup() {
+        lifecycleScope.launch {
+            try {
+                val updateManager = AppUpdateManager(this@MainActivity)
+                val result = updateManager.checkForUpdate()
+                result.onSuccess { updateInfo ->
+                    if (updateInfo != null && !isFinishing && !isDestroyed) {
+                        showStartupUpdateDialog(updateInfo)
+                    }
+                }
+            } catch (e: Exception) {
+                // Silently ignore network or GitHub connection errors on background check
+            }
+        }
+    }
+
+    private fun showStartupUpdateDialog(update: AppUpdateManager.UpdateInfo) {
+        val sizeMb = String.format(Locale.US, "%.1f MB", update.apkSize / (1024f * 1024f))
+        AlertDialog.Builder(this)
+            .setTitle("🎉 Có bản cập nhật mới!")
+            .setMessage("Bản dựng: ${update.releaseName} (Build #${update.remoteVersionCode})\nDung lượng: $sizeMb\n\nBạn có muốn cập nhật ứng dụng ngay bây giờ không?")
+            .setPositiveButton("Cập nhật ngay") { _, _ ->
+                val intent = Intent(this, SettingsActivity::class.java).apply {
+                    putExtra(SettingsActivity.EXTRA_AUTO_UPDATE, true)
+                }
+                startActivity(intent)
+            }
+            .setNegativeButton("Để sau", null)
+            .show()
     }
 
     companion object {

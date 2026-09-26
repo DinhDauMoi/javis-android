@@ -106,8 +106,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: JAVIS v1.0.${{ github.run_number }} (Build #${{ github.run_number }})
+          tag_name: build-${{ github.run_number }}
+          name: "JAVIS v1.0.${{ github.run_number }} (Build #${{ github.run_number }})"
           draft: false
           prerelease: false
           body: |

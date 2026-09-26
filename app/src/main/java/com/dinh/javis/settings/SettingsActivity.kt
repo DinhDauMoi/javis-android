@@ -1,6 +1,7 @@
 package com.dinh.javis.settings
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
@@ -46,6 +47,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var updateManager: AppUpdateManager
     private var downloadedApkFile: File? = null
 
+    companion object {
+        const val EXTRA_AUTO_UPDATE = "extra_auto_update"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
@@ -62,6 +67,20 @@ class SettingsActivity : AppCompatActivity() {
         setupFloatingMicSection()
         setupCustomCommandsRecycler()
         setupUpdateSection()
+
+        if (intent.getBooleanExtra(EXTRA_AUTO_UPDATE, false)) {
+            checkAppUpdate(isManual = false)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val apk = downloadedApkFile
+            if (apk != null && apk.exists() && packageManager.canRequestPackageInstalls()) {
+                binding.btnInstallUpdate.visibility = View.VISIBLE
+            }
+        }
     }
 
     private fun setupToolbar() {

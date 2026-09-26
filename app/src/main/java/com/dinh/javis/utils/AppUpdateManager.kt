@@ -92,9 +92,10 @@ class AppUpdateManager(private val context: Context) {
             val releaseName = json.optString("name", tagName)
             val releaseNotes = json.optString("body", "")
 
-            // Extract remote versionCode (supports "build-42", "v1.0.42", "1.0.42", etc.)
+            // Extract remote versionCode (supports "build-42", "v1.0.42", "1.0.42", "Build #42", etc.)
             val remoteVersionCode = Regex("""(?:build-|\.)(\d+)$""").find(tagName)?.groupValues?.get(1)?.toLongOrNull()
                 ?: Regex("""(\d+)$""").find(tagName)?.groupValues?.get(1)?.toLongOrNull()
+                ?: Regex("""Build\s*#?(\d+)""", RegexOption.IGNORE_CASE).find(releaseName)?.groupValues?.get(1)?.toLongOrNull()
                 ?: 0L
 
             val currentCode = getCurrentVersionCode()
