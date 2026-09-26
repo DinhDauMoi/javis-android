@@ -114,6 +114,7 @@
                         android:textSize="14sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- Nút Lưu cấu hình AI -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSaveAiConfig"
                     android:layout_width="match_parent"
@@ -123,6 +124,158 @@
                     android:textColor="@color/bg_dark"
                     android:textStyle="bold"
                     app:cornerRadius="8dp" />
+
+                <!-- Nút Kiểm tra kết nối AI -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnTestAiConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#1A2438"
+                    android:text="⚡ KIỂM TRA KẾT NỐI AI"
+                    android:textColor="@color/primary"
+                    android:textStyle="bold"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="@color/primary"
+                    app:strokeWidth="1dp" />
+
+                <TextView
+                    android:id="@+id/tvConnectionResult"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center"
+                    android:text=""
+                    android:textColor="@color/status_green"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+            <!-- Card: Vision & Behavior Agent -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:background="@drawable/bg_glass_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Thị giác &amp; Tác vụ đa bước (Agent)"
+                    android:textColor="@color/primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="Quan sát màn hình, đọc chữ On-Device OCR và tự động thực thi các chuỗi hành vi thông minh (ReAct Agent)"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <!-- Bật chế độ quan sát thị giác -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchVisionMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Bật chế độ quan sát thị giác (Vision)"
+                    android:textColor="@color/text_primary"
+                    app:thumbTint="@color/primary"
+                    app:trackTint="#4000E5FF" />
+
+                <!-- Bật Behavior Agent -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchBehaviorAgent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Bật tự động hóa đa bước (Behavior Agent)"
+                    android:textColor="@color/text_primary"
+                    app:thumbTint="@color/primary"
+                    app:trackTint="#4000E5FF" />
+
+                <!-- Giới hạn số bước hành động tối đa -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Số bước tối đa mỗi tác vụ"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/tvAgentMaxStepsValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_badge"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
+                        android:text="8 bước"
+                        android:textColor="@color/primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/seekAgentMaxSteps"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="12"
+                    android:progress="5"
+                    android:progressTint="@color/primary"
+                    android:thumbTint="@color/primary" />
+
+                <!-- Nút Quản lý Guardrails (Blacklist/Whitelist) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnManageGuardrails"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:backgroundTint="#1A2438"
+                    android:text="🛡️ QUY TẮC BẢO VỆ (GUARDRAILS)"
+                    android:textColor="@color/primary"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="@color/primary"
+                    app:strokeWidth="1dp" />
+
+                <!-- Nút Xem Lịch sử tác vụ -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnViewTaskHistory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#1A2438"
+                    android:text="📜 LỊCH SỬ TÁC VỤ (TASK HISTORY)"
+                    android:textColor="@color/text_primary"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#2A3B5C"
+                    app:strokeWidth="1dp" />
+
+                <!-- Nút Xóa toàn bộ lịch sử -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnClearAllHistory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#2A1515"
+                    android:text="🗑️ XÓA TOÀN BỘ LỊCH SỬ TÁC VỤ"
+                    android:textColor="#FF5252"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#FF5252"
+                    app:strokeWidth="1dp" />
 
             </LinearLayout>
 

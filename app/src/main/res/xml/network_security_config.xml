@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Cho phép HTTP cleartext đối với mạng LAN nội bộ (Ollama, vLLM trên PC/server gia đình) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <!-- Dải mạng LAN phổ biến RFC1918 -->
+        <domain includeSubdomains="true">192.168.1.1</domain>
+    </domain-config>
+
+    <!-- Mặc định chỉ cho phép kết nối HTTPS bảo mật cho tất cả các domain ngoài Internet -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

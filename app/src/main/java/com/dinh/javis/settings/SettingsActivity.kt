@@ -8,27 +8,34 @@ import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import java.util.Locale
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.dinh.javis.R
+import com.dinh.javis.agent.BehaviorAggregator
+import com.dinh.javis.agent.PolicyGuard
+import com.dinh.javis.ai.OpenAiCompatibleClient
 import com.dinh.javis.data.AppDatabase
 import com.dinh.javis.data.CustomCommand
+import com.dinh.javis.data.PolicyRule
 import com.dinh.javis.data.PreferenceManager
+import com.dinh.javis.data.TaskRun
 import com.dinh.javis.databinding.ActivitySettingsBinding
 import com.dinh.javis.databinding.DialogAddCustomCommandBinding
 import com.dinh.javis.service.FloatingBubbleService
+import com.dinh.javis.utils.AppUpdateManager
 import com.dinh.javis.utils.PermissionHelper
 import com.dinh.javis.utils.TextNormalizer
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-
 import java.io.File
-import com.dinh.javis.utils.AppUpdateManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Màn hình Cài đặt của JAVIS
- * Cho phép cấu hình OpenAI API, từ khóa đánh thức, nút mic nổi, quản lý lệnh tùy chỉnh và cập nhật ứng dụng
+ * Cho phép cấu hình OpenAI/BYOK endpoints, kiểm tra kết nối AI, chế độ Thị giác & Behavior Agent,
+ * từ khóa đánh thức, nút mic nổi, quản lý lệnh tùy chỉnh và cập nhật ứng dụng.
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -50,6 +57,7 @@ class SettingsActivity : AppCompatActivity() {
 
         setupToolbar()
         loadAiSettings()
+        setupVisionAndAgentSection()
         setupWakeWordSection()
         setupFloatingMicSection()
         setupCustomCommandsRecycler()
@@ -77,6 +85,198 @@ class SettingsActivity : AppCompatActivity() {
             preferenceManager.openAiModel = if (model.isNotEmpty()) model else "gpt-4o-mini"
 
             Toast.makeText(this, getString(R.string.settings_saved), Toast.LENGTH_SHORT).show()
+        }
+
+        binding.btnTestAiConnection.setOnClickListener {
+            val url = binding.etBaseUrl.text?.toString()?.trim() ?: "https://api.openai.com/v1"
+            val key = binding.etApiKey.text?.toString()?.trim() ?: ""
+            val model = binding.etModelName.text?.toString()?.trim() ?: "gpt-4o-mini"
+
+            binding.btnTestAiConnection.isEnabled = false
+            binding.btnTestAiConnection.text = "⏳ Đang kiểm tra kết nối..."
+            binding.tvConnectionResult.visibility = View.VISIBLE
+            binding.tvConnectionResult.text = "Đang gửi yêu cầu thử nghiệm..."
+            binding.tvConnectionResult.setTextColor(getColor(R.color.text_secondary))
+
+            lifecycleScope.launch {
+                val client = OpenAiCompatibleClient(url, key, model, model, model)
+                val testResult = client.testConnection(url, key, model)
+
+                binding.btnTestAiConnection.isEnabled = true
+                binding.btnTestAiConnection.text = "⚡ KIỂM TRA KẾT NỐI AI"
+
+                testResult.onSuccess { pair ->
+                    binding.tvConnectionResult.text = "✅ ${pair.second}"
+                    binding.tvConnectionResult.setTextColor(getColor(R.color.status_green))
+                }.onFailure { err ->
+                    binding.tvConnectionResult.text = "❌ ${err.message}"
+                    binding.tvConnectionResult.setTextColor(getColor(android.R.color.holo_red_light))
+                }
+            }
+        }
+    }
+
+    private fun setupVisionAndAgentSection() {
+        binding.switchVisionMode.isChecked = preferenceManager.isVisionEnabled
+        binding.switchVisionMode.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.isVisionEnabled = isChecked
+        }
+
+        binding.switchBehaviorAgent.isChecked = preferenceManager.isBehaviorAgentEnabled
+        binding.switchBehaviorAgent.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.isBehaviorAgentEnabled = isChecked
+        }
+
+        val initialSteps = preferenceManager.agentMaxSteps
+        binding.seekAgentMaxSteps.progress = (initialSteps - 3).coerceIn(0, 12)
+        binding.tvAgentMaxStepsValue.text = "$initialSteps bước"
+
+        binding.seekAgentMaxSteps.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val steps = progress + 3
+                binding.tvAgentMaxStepsValue.text = "$steps bước"
+                if (fromUser) {
+                    preferenceManager.agentMaxSteps = steps
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        binding.btnManageGuardrails.setOnClickListener {
+            showGuardrailsDialog()
+        }
+
+        binding.btnViewTaskHistory.setOnClickListener {
+            showTaskHistoryDialog()
+        }
+
+        binding.btnClearAllHistory.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Xóa toàn bộ lịch sử tác vụ")
+                .setMessage("Bạn có chắc chắn muốn xóa toàn bộ lịch sử các tác vụ tự động hóa và nhật ký hành động không?")
+                .setPositiveButton("Xóa toàn bộ") { _, _ ->
+                    lifecycleScope.launch {
+                        BehaviorAggregator(this@SettingsActivity).clearAllStats()
+                        Toast.makeText(this@SettingsActivity, "Đã xóa toàn bộ lịch sử tác vụ thành công!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("Hủy", null)
+                .show()
+        }
+    }
+
+    private fun showGuardrailsDialog() {
+        lifecycleScope.launch {
+            val rules = database.policyRuleDao().getAllRules()
+            if (rules.isEmpty()) {
+                PolicyGuard(this@SettingsActivity).initDefaultRulesIfEmpty()
+            }
+            val currentRules = database.policyRuleDao().getAllRules()
+            val ruleItems = currentRules.map { rule ->
+                val badge = when (rule.policy) {
+                    PolicyRule.POLICY_DENY -> "🔴 CHẶN"
+                    PolicyRule.POLICY_REQUIRE_CONFIRM -> "🟡 HỎI TRƯỚC"
+                    else -> "🟢 CHO PHÉP"
+                }
+                "$badge | ${rule.packageName}\n(${rule.notes ?: "Không có ghi chú"})"
+            }.toTypedArray()
+
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("🛡️ Quy tắc bảo vệ ứng dụng (Guardrails)")
+                .setItems(ruleItems) { _, which ->
+                    val selected = currentRules[which]
+                    showEditRuleDialog(selected)
+                }
+                .setPositiveButton("Đóng", null)
+                .show()
+        }
+    }
+
+    private fun showEditRuleDialog(rule: PolicyRule) {
+        val policies = arrayOf("🟢 Cho phép (ALLOW)", "🟡 Hỏi xác nhận (REQUIRE_CONFIRM)", "🔴 Chặn tuyệt đối (DENY)")
+        val initialIndex = when (rule.policy) {
+            PolicyRule.POLICY_REQUIRE_CONFIRM -> 1
+            PolicyRule.POLICY_DENY -> 2
+            else -> 0
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Cập nhật quy tắc cho:\n${rule.packageName}")
+            .setSingleChoiceItems(policies, initialIndex) { dialog, which ->
+                val newPolicy = when (which) {
+                    1 -> PolicyRule.POLICY_REQUIRE_CONFIRM
+                    2 -> PolicyRule.POLICY_DENY
+                    else -> PolicyRule.POLICY_ALLOW
+                }
+                lifecycleScope.launch {
+                    database.policyRuleDao().insertRule(rule.copy(policy = newPolicy))
+                    Toast.makeText(this@SettingsActivity, "Đã cập nhật quy tắc cho ${rule.packageName}", Toast.LENGTH_SHORT).show()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun showTaskHistoryDialog() {
+        lifecycleScope.launch {
+            val runs = database.taskRunDao().getAllRuns()
+            if (runs.isEmpty()) {
+                AlertDialog.Builder(this@SettingsActivity)
+                    .setTitle("📜 Lịch sử tác vụ (Task History)")
+                    .setMessage("Chưa có tác vụ tự động nào được ghi nhận.")
+                    .setPositiveButton("Đóng", null)
+                    .show()
+                return@launch
+            }
+
+            val dateFormat = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
+            val items = runs.take(20).map { run ->
+                val timeStr = dateFormat.format(Date(run.startTime))
+                val statusBadge = when (run.status) {
+                    TaskRun.STATUS_SUCCESS -> "✅ Thành công"
+                    TaskRun.STATUS_CANCELLED -> "⏹️ Đã hủy"
+                    else -> "❌ Thất bại"
+                }
+                "[$timeStr] $statusBadge (${run.stepCount} bước)\nMục tiêu: ${run.taskGoal}"
+            }.toTypedArray()
+
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("📜 Lịch sử tác vụ gần đây")
+                .setItems(items) { _, which ->
+                    val selectedRun = runs[which]
+                    showTaskRunDetailDialog(selectedRun)
+                }
+                .setPositiveButton("Đóng", null)
+                .show()
+        }
+    }
+
+    private fun showTaskRunDetailDialog(run: TaskRun) {
+        lifecycleScope.launch {
+            val logs = database.actionLogDao().getLogsForRun(run.runId)
+            val builder = StringBuilder()
+            builder.append("Mục tiêu: ").append(run.taskGoal).append("\n")
+            builder.append("Trạng thái: ").append(run.status).append("\n")
+            builder.append("Số bước thực hiện: ").append(run.stepCount).append("\n")
+            if (!run.failureReason.isNullOrBlank()) {
+                builder.append("Nguyên nhân/Kết quả: ").append(run.failureReason).append("\n")
+            }
+            builder.append("\nChi tiết các hành động:\n")
+            if (logs.isEmpty()) {
+                builder.append("(Không có chi tiết hành động)\n")
+            } else {
+                for ((idx, log) in logs.withIndex()) {
+                    builder.append("${idx + 1}. [${log.actionType}] ${log.sanitizedDetails} (App: ${log.targetPackage})\n")
+                }
+            }
+
+            AlertDialog.Builder(this@SettingsActivity)
+                .setTitle("Chi tiết phiên tác vụ")
+                .setMessage(builder.toString())
+                .setPositiveButton("Đóng", null)
+                .show()
         }
     }
 
@@ -184,7 +384,6 @@ class SettingsActivity : AppCompatActivity() {
         binding.rvCustomCommands.layoutManager = LinearLayoutManager(this)
         binding.rvCustomCommands.adapter = commandAdapter
 
-        // Quan sát danh sách lệnh tùy biến từ Room DB
         lifecycleScope.launch {
             database.customCommandDao().getAllAsFlow().collectLatest { list ->
                 commandAdapter.submitList(list)
@@ -337,7 +536,6 @@ class SettingsActivity : AppCompatActivity() {
                 binding.tvUpdateProgress.text = "✅ Đã tải xong! Sẵn sàng cài đặt."
                 binding.btnInstallUpdate.visibility = View.VISIBLE
                 Toast.makeText(this@SettingsActivity, "Tải bản cập nhật thành công! Đang mở cài đặt...", Toast.LENGTH_SHORT).show()
-                // Tự động mở màn hình cài đặt của hệ thống
                 updateManager.installApk(this@SettingsActivity, apkFile)
             }.onFailure { err ->
                 binding.layoutUpdateProgress.visibility = View.GONE
@@ -346,4 +544,3 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 }
-

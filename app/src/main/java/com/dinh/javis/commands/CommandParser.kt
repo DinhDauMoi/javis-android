@@ -66,7 +66,23 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.ScrollDown
         }
 
-        // 3. Mở nhanh các ứng dụng phổ biến và mở theo từ khóa "mở" + tên app (chấp nhận chứa từ khóa, không dấu, chữ thường)
+        // 3. Thị giác máy tính: "nhìn màn hình", "xem màn hình", "màn hình có gì", "phân tích màn hình", "đọc màn hình"
+        if (normalized.contains("nhin man hinh") || normalized.contains("xem man hinh") ||
+            normalized.contains("man hinh co gi") || normalized.contains("phan tich man hinh") ||
+            normalized.contains("doc man hinh") || normalized.contains("tren man hinh co")
+        ) {
+            return Command.AnalyzeScreen(cleanInput)
+        }
+
+        // 4. Tác vụ đa bước Behavior Agent: "tự động ...", "thực hiện tác vụ ...", "agent ..."
+        if (normalized.startsWith("tu dong ") || normalized.contains("thuc hien tac vu ") ||
+            normalized.contains("tim va bam ") || normalized.startsWith("agent ")
+        ) {
+            val goal = cleanInput.removePrefix("tự động").removePrefix("agent").trim()
+            return Command.RunBehaviorAgent(goal.ifBlank { cleanInput })
+        }
+
+        // 5. Mở nhanh các ứng dụng phổ biến và mở theo từ khóa "mở" + tên app (chấp nhận chứa từ khóa, không dấu, chữ thường)
         if (normalized.contains("youtube") || normalized.contains("you tube")) {
             return Command.OpenApp("youtube")
         }
@@ -223,9 +239,7 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             }
         }
 
-
-
-        // 14. Mặc định: Gửi cho AI trả lời thông minh
+        // 15. Mặc định: Gửi cho AI trả lời thông minh
         return Command.AskAi(trimmed)
     }
 }

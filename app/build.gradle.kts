@@ -82,8 +82,17 @@ dependencies {
     // ONNX Runtime Android cho openWakeWord on-device
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.1")
 
+    // Security Crypto cho Keystore & mã hóa dữ liệu cục bộ
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // ML Kit Text Recognition on-device (OCR cho Perception Layer 2)
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.room:room-testing:2.6.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }

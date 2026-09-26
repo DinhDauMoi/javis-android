@@ -2,26 +2,80 @@ package com.dinh.javis.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.dinh.javis.security.KeystoreManager
 
 /**
- * Trình quản lý cấu hình và thiết lập ứng dụng JAVIS (SharedPreferences)
+ * Trình quản lý cấu hình và thiết lập ứng dụng JAVIS.
+ * Sử dụng KeystoreManager để lưu trữ an toàn các thông tin nhạy cảm (API Key).
  */
 class PreferenceManager(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    private val keystoreManager = KeystoreManager(context)
+
+    init {
+        migrateLegacyApiKeyIfNeeded()
+    }
+
+    /**
+     * Tự động di chuyển API Key từ SharedPreferences dạng văn bản thô
+     * sang vùng lưu trữ mã hóa phần cứng Keystore AES-GCM khi khởi động
+     */
+    private fun migrateLegacyApiKeyIfNeeded() {
+        val legacyKey = prefs.getString(KEY_API_KEY, "") ?: ""
+        if (legacyKey.isNotBlank()) {
+            val alias = DEFAULT_KEY_ALIAS
+            keystoreManager.encrypt(alias, legacyKey)
+            val decrypted = keystoreManager.decrypt(alias)
+            if (decrypted == legacyKey) {
+                // Xóa hoàn toàn key dạng plaintext khỏi preferences
+                prefs.edit().remove(KEY_API_KEY).apply()
+            }
+        }
+    }
 
     var openAiBaseUrl: String
         get() = prefs.getString(KEY_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1"
         set(value) = prefs.edit().putString(KEY_BASE_URL, value.trim()).apply()
 
     var openAiApiKey: String
-        get() = prefs.getString(KEY_API_KEY, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_API_KEY, value.trim()).apply()
+        get() {
+            // Đọc từ kho lưu trữ Keystore an toàn
+            val encryptedKey = keystoreManager.decrypt(DEFAULT_KEY_ALIAS)
+            if (encryptedKey.isNotEmpty()) return encryptedKey
+            // Fallback nếu vẫn còn key cũ chưa di chuyển
+            return prefs.getString(KEY_API_KEY, "") ?: ""
+        }
+        set(value) {
+            val trimmed = value.trim()
+            if (trimmed.isEmpty()) {
+                keystoreManager.deleteKey(DEFAULT_KEY_ALIAS)
+            } else {
+                keystoreManager.encrypt(DEFAULT_KEY_ALIAS, trimmed)
+            }
+            prefs.edit().remove(KEY_API_KEY).apply()
+        }
 
     var openAiModel: String
         get() = prefs.getString(KEY_MODEL, "gpt-4o-mini") ?: "gpt-4o-mini"
         set(value) = prefs.edit().putString(KEY_MODEL, value.trim()).apply()
+
+    var activeAiProfileId: String
+        get() = prefs.getString(KEY_ACTIVE_AI_PROFILE_ID, "default_profile") ?: "default_profile"
+        set(value) = prefs.edit().putString(KEY_ACTIVE_AI_PROFILE_ID, value.trim()).apply()
+
+    var isVisionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_VISION_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_VISION_ENABLED, value).apply()
+
+    var isBehaviorAgentEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BEHAVIOR_AGENT_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_BEHAVIOR_AGENT_ENABLED, value).apply()
+
+    var agentMaxSteps: Int
+        get() = prefs.getInt(KEY_AGENT_MAX_STEPS, 8)
+        set(value) = prefs.edit().putInt(KEY_AGENT_MAX_STEPS, value).apply()
 
     var isWakeWordEnabled: Boolean
         get() = prefs.getBoolean(KEY_WAKEWORD_ENABLED, true)
@@ -48,10 +102,16 @@ class PreferenceManager(context: Context) {
         private const val KEY_BASE_URL = "openai_base_url"
         private const val KEY_API_KEY = "openai_api_key"
         private const val KEY_MODEL = "openai_model"
+        private const val KEY_ACTIVE_AI_PROFILE_ID = "active_ai_profile_id"
+        private const val KEY_VISION_ENABLED = "vision_enabled"
+        private const val KEY_BEHAVIOR_AGENT_ENABLED = "behavior_agent_enabled"
+        private const val KEY_AGENT_MAX_STEPS = "agent_max_steps"
         private const val KEY_WAKEWORD_ENABLED = "wakeword_enabled"
         private const val KEY_PICOVOICE_KEY = "picovoice_key"
         private const val KEY_FLOATING_MIC = "floating_mic_enabled"
         private const val KEY_WAKEWORD_THRESHOLD = "wakeword_threshold"
         private const val KEY_GLOW_OVERLAY_ENABLED = "glow_overlay_enabled"
+
+        const val DEFAULT_KEY_ALIAS = "default_openai_key"
     }
 }

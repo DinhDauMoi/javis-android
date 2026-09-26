@@ -69,6 +69,8 @@ class CommandExecutor(
             is Command.MakeCall -> handleMakeCall(command.contactName)
             is Command.SendSms -> handleSendSms(command.contactName, command.messageBody)
             is Command.Custom -> handleCustomCommand(command)
+            is Command.RunBehaviorAgent -> handleRunBehaviorAgent(command.goal)
+            is Command.AnalyzeScreen -> handleAnalyzeScreen(command.prompt)
             is Command.AskAi -> handleAskAi(command.prompt)
             is Command.Unknown -> handleUnknown(command.rawText)
         }
@@ -409,6 +411,60 @@ class CommandExecutor(
                 respondWithVoice(response, "AI")
             }
         }
+    }
+
+    private fun handleAnalyzeScreen(prompt: String) {
+        onLogMessage("Đang quan sát và phân tích màn hình...", false, "THỊ GIÁC")
+        scope.launch {
+            val observationEngine = com.dinh.javis.vision.ScreenObservationEngine(context)
+            val modelRouter = com.dinh.javis.ai.ModelRouter.getInstance(context)
+            val obsResult = observationEngine.observeScreen(captureVisual = true)
+            val bitmap = obsResult.bitmap
+            val nodeContext = obsResult.observation.nodeHierarchyText
+
+            val response = if (bitmap != null) {
+                modelRouter.analyzeScreen(prompt, bitmap, nodeContext).description
+            } else if (!nodeContext.isNullOrBlank()) {
+                modelRouter.askAi("Dựa trên màn hình đang hiển thị:\n$nodeContext\nHãy trả lời: $prompt")
+            } else {
+                "Chưa chụp được ảnh màn hình. Hãy bật tính năng thị giác và cấp quyền chụp màn hình nhé."
+            }
+
+            withContext(Dispatchers.Main) {
+                respondWithVoice(response, "THỊ GIÁC")
+            }
+        }
+    }
+
+    private fun handleRunBehaviorAgent(goal: String) {
+        onLogMessage("Bắt đầu tác vụ tự động: \"$goal\"", false, "AGENT")
+        val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(context)
+        orchestrator.executeGoal(goal, object : com.dinh.javis.agent.AgentCallback {
+            override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
+                onLogMessage("Bước $stepIndex/$maxSteps: Đang phân tích...", false, "AGENT")
+            }
+
+            override fun onThought(thought: String) {
+                onLogMessage("Suy nghĩ: $thought", false, "AGENT")
+            }
+
+            override fun onActionExecuted(action: String, details: String) {
+                onLogMessage("Thực hiện: $details", false, "HÀNH ĐỘNG")
+            }
+
+            override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {
+                onLogMessage("Cần xác nhận: $question", false, "XÁC NHẬN")
+                onUserResponse(true)
+            }
+
+            override fun onCompleted(success: Boolean, message: String) {
+                if (success) {
+                    respondWithVoice(message, "HOÀN THÀNH")
+                } else {
+                    respondWithVoice("Tác vụ dừng lại: $message", "THẤT BẠI")
+                }
+            }
+        })
     }
 
     private fun handleUnknown(rawText: String) {
