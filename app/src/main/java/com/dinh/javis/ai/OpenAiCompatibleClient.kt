@@ -18,8 +18,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 /**
- * Client giao tiếp với bất kỳ AI Gateway nào hỗ trợ giao thức OpenAI API
- * (OpenAI GPT-4o, Groq Vision, OpenRouter, DeepSeek, Ollama, vLLM nội bộ).
+ * Client for communicating with any AI Gateway supporting the OpenAI API protocol
+ * (OpenAI GPT-4o, Groq Vision, OpenRouter, Mistral, Ollama, local vLLM).
  */
 class OpenAiCompatibleClient(
     private var baseUrl: String,
@@ -50,29 +50,76 @@ class OpenAiCompatibleClient(
     }
 
     private fun normalizeEndpoint(url: String): String {
-        val trimmed = url.trim()
-        return if (trimmed.endsWith("/chat/completions")) {
-            trimmed
-        } else if (trimmed.endsWith("/")) {
-            "${trimmed}chat/completions"
-        } else {
-            "${trimmed}/chat/completions"
+        var trimmed = url.trim().removeSuffix("/")
+        if (trimmed.endsWith("/chat/completions")) {
+            return trimmed
         }
+        if (!trimmed.endsWith("/v1")) {
+            trimmed = "$trimmed/v1"
+        }
+        return "$trimmed/chat/completions"
+    }
+
+    private fun isMistralOrPixtral(modelName: String, url: String): Boolean {
+        return modelName.contains("mistral", ignoreCase = true) ||
+                modelName.contains("pixtral", ignoreCase = true) ||
+                url.contains("mistral.ai", ignoreCase = true)
+    }
+
+    private fun resolveModelName(modelName: String, url: String): String {
+        val trimmedModel = modelName.trim()
+        if (url.contains("gateway.genrostore.com") || url.contains("openrouter.ai")) {
+            if (!trimmedModel.contains("/")) {
+                if (trimmedModel.contains("pixtral", ignoreCase = true) || trimmedModel.contains("mistral", ignoreCase = true)) {
+                    return "mistral/$trimmedModel"
+                }
+            }
+        }
+        return trimmedModel
     }
 
     override suspend fun chat(messages: List<ChatMessage>, options: ModelOptions): String = withContext(Dispatchers.IO) {
         val endpoint = normalizeEndpoint(baseUrl)
+        val isMistral = isMistralOrPixtral(defaultChatModel, baseUrl)
+
         val jsonPayload = JSONObject().apply {
-            put("model", defaultChatModel)
+            put("model", resolveModelName(defaultChatModel, baseUrl))
             put("temperature", options.temperature)
             put("max_tokens", options.maxTokens)
 
             val messagesArray = JSONArray()
-            for (msg in messages) {
-                messagesArray.put(JSONObject().apply {
-                    put("role", msg.role)
-                    put("content", msg.content)
-                })
+            if (isMistral) {
+                // Pixtral/Mistral models do not support role: "system"; prepend system instructions into the first user message
+                val systemContents = messages.filter { it.role.equals("system", ignoreCase = true) }.map { it.content }
+                val nonSystem = messages.filterNot { it.role.equals("system", ignoreCase = true) }
+                val systemPrefix = if (systemContents.isNotEmpty()) systemContents.joinToString("\n\n") + "\n\n" else ""
+
+                var firstUserHandled = false
+                for (msg in nonSystem) {
+                    val content = if (!firstUserHandled && msg.role.equals("user", ignoreCase = true)) {
+                        firstUserHandled = true
+                        systemPrefix + msg.content
+                    } else {
+                        msg.content
+                    }
+                    messagesArray.put(JSONObject().apply {
+                        put("role", msg.role)
+                        put("content", content)
+                    })
+                }
+                if (!firstUserHandled && systemPrefix.isNotBlank()) {
+                    messagesArray.put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", systemPrefix.trim())
+                    })
+                }
+            } else {
+                for (msg in messages) {
+                    messagesArray.put(JSONObject().apply {
+                        put("role", msg.role)
+                        put("content", msg.content)
+                    })
+                }
             }
             put("messages", messagesArray)
         }
@@ -88,25 +135,32 @@ class OpenAiCompatibleClient(
     ): VisionAnalysisResult = withContext(Dispatchers.IO) {
         val endpoint = normalizeEndpoint(baseUrl)
         val base64Image = encodeBitmapToBase64Jpeg(bitmap)
+        val isMistral = isMistralOrPixtral(defaultVisionModel, baseUrl)
+        val systemPrompt = "Bạn là JAVIS Vision Assistant. Bạn nhận hình ảnh màn hình điện thoại và bối cảnh cây giao diện. Hãy phân tích các phần tử hiển thị trên màn hình và trả lời bằng tiếng Việt ngắn gọn, chính xác."
 
         val jsonPayload = JSONObject().apply {
-            put("model", defaultVisionModel)
+            put("model", resolveModelName(defaultVisionModel, baseUrl))
             put("temperature", options.temperature)
             put("max_tokens", max(options.maxTokens, 400))
 
             val messagesArray = JSONArray().apply {
-                // System message
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", "Bạn là JAVIS Vision Assistant. Bạn nhận hình ảnh màn hình điện thoại và bối cảnh cây giao diện. Hãy phân tích các phần tử hiển thị trên màn hình và trả lời bằng tiếng Việt ngắn gọn, chính xác.")
-                })
+                if (!isMistral) {
+                    // System message for models supporting standard OpenAI schema
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", systemPrompt)
+                    })
+                }
 
-                // User message with text and image_url
+                // User message with text prompt and image_url payload
                 val userContentArray = JSONArray().apply {
                     val fullTextPrompt = buildString {
+                        if (isMistral) {
+                            append("[$systemPrompt]\n\n")
+                        }
                         append(prompt)
                         if (!nodeContext.isNullOrBlank()) {
-                            append("\n\n[Bối cảnh giao diện Accessibility]:\n")
+                            append("\n\n[Accessibility UI Hierarchy]:\n")
                             append(nodeContext)
                         }
                     }
@@ -134,8 +188,8 @@ class OpenAiCompatibleClient(
             val responseText = executeRequest(endpoint, jsonPayload)
             VisionAnalysisResult(description = responseText, rawResponse = responseText)
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi phân tích thị giác màn hình", e)
-            VisionAnalysisResult(description = "Không thể phân tích màn hình: ${e.message}", rawResponse = "")
+            Log.e(TAG, "Error analyzing screen vision", e)
+            VisionAnalysisResult(description = "Unable to analyze screen: ${e.message}", rawResponse = "")
         }
     }
 
@@ -148,68 +202,76 @@ class OpenAiCompatibleClient(
         val endpoint = normalizeEndpoint(baseUrl)
 
         val systemPrompt = """
-            Bạn là Behavior Agent điều khiển điện thoại thông minh JAVIS.
-            Nhiệm vụ của bạn là đưa ra hành động tiếp theo để đạt mục tiêu của người dùng.
-            BẮT BUỘC chỉ trả về định dạng JSON thuần túy (không thêm lời dẫn, không bọc markdown ```json):
+            You are JAVIS Behavior Agent controlling an Android smartphone.
+            Your task is to plan the next action to achieve the user's goal.
+            You MUST return raw JSON only (no markdown, no ```json wrapper):
             {
-              "thought": "Giải thích ngắn gọn lý do chọn hành động (tiếng Việt)",
+              "thought": "Brief reasoning for choosing this action",
               "action": "CLICK" | "SCROLL" | "TYPE" | "WAIT" | "TERMINATE",
               "params": {
                 "x": 540,
                 "y": 1200,
-                "text": "nội dung nếu TYPE",
+                "text": "text content if TYPE",
                 "direction": "UP" | "DOWN" | "LEFT" | "RIGHT"
               },
               "isGoalComplete": false
             }
-            Ghi chú:
-            - CLICK: Bấm vào tọa độ (x, y) trên màn hình.
-            - SCROLL: Cuộn trang theo hướng direction (UP/DOWN).
-            - TYPE: Nhập text vào ô nhập liệu đang focus hoặc vừa click.
-            - WAIT: Chờ màn hình tải dữ liệu.
-            - TERMINATE: Đã hoàn thành hoặc không thể tiếp tục, đặt isGoalComplete = true.
+            Notes:
+            - CLICK: Tap at physical coordinates (x, y).
+            - SCROLL: Scroll in direction (UP/DOWN).
+            - TYPE: Input text into the focused field.
+            - WAIT: Wait for UI to load.
+            - TERMINATE: Completed or cannot proceed; set isGoalComplete = true.
         """.trimIndent()
 
         val userPromptBuilder = StringBuilder().apply {
-            append("Mục tiêu tác vụ: ").append(taskGoal).append("\n")
-            append("Ứng dụng hiện tại: ").append(screenSummary.currentPackage ?: "Chưa rõ").append("\n")
-            append("Kích thước màn hình: ${screenSummary.screenshotWidth}x${screenSummary.screenshotHeight}\n\n")
+            append("Task goal: ").append(taskGoal).append("\n")
+            append("Current package: ").append(screenSummary.currentPackage ?: "Unknown").append("\n")
+            append("Screen resolution: ${screenSummary.screenshotWidth}x${screenSummary.screenshotHeight}\n\n")
 
             if (!screenSummary.nodeHierarchyText.isNullOrBlank()) {
-                append("[Các phần tử giao diện phát hiện được]:\n")
+                append("[UI Elements Detected]:\n")
                 append(screenSummary.nodeHierarchyText).append("\n\n")
             }
 
             if (!screenSummary.ocrText.isNullOrBlank()) {
-                append("[Văn bản OCR đọc được trên màn hình]:\n")
+                append("[On-Screen OCR Text]:\n")
                 append(screenSummary.ocrText).append("\n\n")
             }
 
             if (history.isNotEmpty()) {
-                append("[Lịch sử các bước đã thực hiện]:\n")
+                append("[Execution History]:\n")
                 for (step in history) {
-                    append("- Bước ${step.stepIndex}: ${step.action} (${step.details}) -> Thành công: ${step.success}\n")
+                    append("- Step ${step.stepIndex}: ${step.action} (${step.details}) -> Success: ${step.success}\n")
                 }
                 append("\n")
             }
 
-            append("Hãy quyết định bước tiếp theo dưới dạng JSON:")
+            append("Decide the next action as JSON:")
         }
 
+        val isMistral = isMistralOrPixtral(defaultPlanningModel, baseUrl)
         val jsonPayload = JSONObject().apply {
-            put("model", defaultPlanningModel)
-            put("temperature", 0.2) // Nhiệt độ thấp cho JSON deterministic
+            put("model", resolveModelName(defaultPlanningModel, baseUrl))
+            put("temperature", 0.2) // Low temperature for deterministic JSON output
             put("max_tokens", 350)
 
             val messagesArray = JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", systemPrompt)
-                })
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", userPromptBuilder.toString())
-                })
+                if (!isMistral) {
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", systemPrompt)
+                    })
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", userPromptBuilder.toString())
+                    })
+                } else {
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", "$systemPrompt\n\n$userPromptBuilder")
+                    })
+                }
             }
             put("messages", messagesArray)
         }
@@ -218,9 +280,9 @@ class OpenAiCompatibleClient(
             val responseText = executeRequest(endpoint, jsonPayload)
             parseActionPlanJson(responseText)
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi lập kế hoạch hành vi ReAct", e)
+            Log.e(TAG, "Error planning ReAct behavior", e)
             ActionPlanResult(
-                thought = "Lỗi khi gọi mô hình lập kế hoạch: ${e.message}",
+                thought = "Error calling planning model: ${e.message}",
                 action = "TERMINATE",
                 isGoalComplete = true,
                 rawJson = ""
@@ -243,7 +305,7 @@ class OpenAiCompatibleClient(
 
         return try {
             val obj = JSONObject(cleanJson)
-            val thought = obj.optString("thought", "Không có giải thích")
+            val thought = obj.optString("thought", "No explanation provided")
             val action = obj.optString("action", "TERMINATE").uppercase()
             val isGoalComplete = obj.optBoolean("isGoalComplete", action == "TERMINATE")
 
@@ -267,9 +329,9 @@ class OpenAiCompatibleClient(
                 rawJson = cleanJson
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Không thể phân tích JSON trả về từ Planner: $rawResponse")
+            Log.w(TAG, "Failed to parse JSON returned from Planner: $rawResponse")
             ActionPlanResult(
-                thought = "Mô hình trả về định dạng không khớp: $rawResponse",
+                thought = "Model returned invalid format: $rawResponse",
                 action = "TERMINATE",
                 isGoalComplete = true,
                 rawJson = rawResponse
@@ -292,10 +354,11 @@ class OpenAiCompatibleClient(
             val bodyString = response.body?.string() ?: ""
             if (!response.isSuccessful) {
                 val errorMsg = when (response.code) {
-                    401 -> "Lỗi 401: API Key không hợp lệ hoặc chưa được ủy quyền."
-                    429 -> "Lỗi 429: Vượt quá giới hạn gọi API (Rate limit)."
-                    500, 502, 503 -> "Lỗi ${response.code}: Máy chủ AI đang bảo trì hoặc quá tải."
-                    else -> "Lỗi kết nối AI (${response.code}): $bodyString"
+                    400 -> "HTTP 400 Bad Request: $bodyString"
+                    401 -> "HTTP 401: Invalid or unauthorized API Key."
+                    429 -> "HTTP 429: API rate limit exceeded."
+                    500, 502, 503 -> "HTTP ${response.code}: AI server maintenance or overload."
+                    else -> "AI connection error (${response.code}): $bodyString"
                 }
                 throw RuntimeException(errorMsg)
             }
@@ -307,13 +370,13 @@ class OpenAiCompatibleClient(
                 val message = firstChoice.optJSONObject("message")
                 return message?.optString("content")?.trim() ?: ""
             }
-            throw RuntimeException("API không trả lời nội dung phù hợp")
+            throw RuntimeException("API returned no valid completion choice")
         }
     }
 
     /**
-     * Nén ảnh Bitmap trực tiếp trong bộ nhớ RAM (JPEG 75%, tối đa 1080p),
-     * không bao giờ lưu vào bộ nhớ flash để bảo đảm quyền riêng tư tuyệt đối.
+     * Compress Bitmap directly in RAM (JPEG 75%, max 1080p),
+     * never writing to disk to guarantee user privacy.
      */
     private fun encodeBitmapToBase64Jpeg(bitmap: Bitmap): String {
         val maxDimension = 1080
@@ -339,17 +402,31 @@ class OpenAiCompatibleClient(
         return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
 
+    private fun extractErrorMessage(jsonBody: String): String {
+        return try {
+            val obj = JSONObject(jsonBody)
+            val errObj = obj.optJSONObject("error")
+            errObj?.optString("message")?.ifBlank { null }
+                ?: obj.optString("message").ifBlank { null }
+                ?: obj.optString("detail").ifBlank { null }
+                ?: jsonBody.take(200)
+        } catch (_: Exception) {
+            jsonBody.take(200)
+        }
+    }
+
     /**
-     * Kiểm tra kết nối thử nghiệm đến endpoint AI
+     * Test connection to the AI endpoint
      */
     suspend fun testConnection(baseUrl: String, apiKey: String, model: String): Result<Pair<Long, String>> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         val endpoint = normalizeEndpoint(baseUrl)
+        val finalModel = resolveModelName(model.ifBlank { "pixtral-12b-2409" }, baseUrl)
 
         val jsonPayload = JSONObject().apply {
-            put("model", model.ifBlank { "gpt-4o-mini" })
-            put("temperature", 0.1)
-            put("max_tokens", 10)
+            put("model", finalModel)
+            put("temperature", 0.2)
+            put("max_tokens", 30)
 
             val messagesArray = JSONArray().apply {
                 put(JSONObject().apply {
@@ -373,15 +450,18 @@ class OpenAiCompatibleClient(
 
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val latency = System.currentTimeMillis() - startTime
+                val bodyString = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    Result.success(Pair(latency, "Kết nối thành công! Độ trễ: ${latency}ms"))
+                    Result.success(Pair(latency, "Kết nối thành công! Độ trễ: ${latency}ms (Mô hình: $finalModel)"))
                 } else {
                     val code = response.code
+                    val detail = extractErrorMessage(bodyString)
                     val desc = when (code) {
-                        401 -> "Sai API Key (401 Unauthorized)"
-                        404 -> "Sai URL endpoint (404 Not Found)"
-                        429 -> "Hết hạn ngạch hoặc bị giới hạn tốc độ (429 Rate Limit)"
-                        else -> "Máy chủ trả về mã lỗi: $code"
+                        400 -> "Lỗi 400 (Yêu cầu không hợp lệ): $detail"
+                        401 -> "Lỗi 401 (Sai hoặc thiếu API Key): $detail"
+                        404 -> "Lỗi 404 (Không tìm thấy endpoint): $detail"
+                        429 -> "Lỗi 429 (Hết hạn ngạch hoặc Rate Limit): $detail"
+                        else -> "Máy chủ trả về mã lỗi $code: $detail"
                     }
                     Result.failure(RuntimeException(desc))
                 }

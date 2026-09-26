@@ -122,11 +122,12 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showPresetProviderDialog() {
         val presets = arrayOf(
-            "Mistral AI (Pixtral 12B - Vision & OCR)\nURL: https://api.mistral.ai/v1 | Model: pixtral-12b-2409",
+            "GenroStore Gateway (Mistral Pixtral 12B)\nURL: https://gateway.genrostore.com/v1 | Model: mistral/pixtral-12b-2409",
+            "Mistral AI Trực tiếp (Pixtral 12B - Vision & OCR)\nURL: https://api.mistral.ai/v1 | Model: pixtral-12b-2409",
             "OpenAI (GPT-4o mini - Vision & Chat)\nURL: https://api.openai.com/v1 | Model: gpt-4o-mini",
-            "Mistral AI (Pixtral Large - Vision cao cấp)\nURL: https://api.mistral.ai/v1 | Model: pixtral-large-latest",
-            "Groq (Llama 3.2 11B Vision - Tốc độ cao)\nURL: https://api.groq.com/openai/v1 | Model: llama-3.2-11b-vision-preview",
-            "Ollama Local (LLaVA - Mạng nội bộ/Offline)\nURL: http://192.168.1.100:11434/v1 | Model: llava"
+            "Mistral AI (Pixtral Large - Thị giác cao cấp)\nURL: https://api.mistral.ai/v1 | Model: pixtral-large-latest",
+            "Groq Vision (Llama 3.2 11B Vision - Tốc độ cao)\nURL: https://api.groq.com/openai/v1 | Model: llama-3.2-11b-vision-preview",
+            "Ollama Cục bộ (LLaVA - Mạng nội bộ/Offline)\nURL: http://192.168.1.100:11434/v1 | Model: llava"
         )
 
         AlertDialog.Builder(this)
@@ -134,29 +135,34 @@ class SettingsActivity : AppCompatActivity() {
             .setItems(presets) { _, which ->
                 when (which) {
                     0 -> {
-                        binding.etBaseUrl.setText("https://api.mistral.ai/v1")
-                        binding.etModelName.setText("pixtral-12b-2409")
-                        Toast.makeText(this, "Đã chọn Mistral Pixtral 12B. Hãy nhập Mistral API Key và lưu!", Toast.LENGTH_LONG).show()
+                        binding.etBaseUrl.setText("https://gateway.genrostore.com/v1")
+                        binding.etModelName.setText("mistral/pixtral-12b-2409")
+                        Toast.makeText(this, "Đã chọn GenroStore Mistral Pixtral. Hãy nhập API Key và lưu!", Toast.LENGTH_LONG).show()
                     }
                     1 -> {
+                        binding.etBaseUrl.setText("https://api.mistral.ai/v1")
+                        binding.etModelName.setText("pixtral-12b-2409")
+                        Toast.makeText(this, "Đã chọn Mistral AI Trực tiếp. Hãy nhập Mistral API Key và lưu!", Toast.LENGTH_LONG).show()
+                    }
+                    2 -> {
                         binding.etBaseUrl.setText("https://api.openai.com/v1")
                         binding.etModelName.setText("gpt-4o-mini")
                         Toast.makeText(this, "Đã chọn OpenAI GPT-4o mini", Toast.LENGTH_SHORT).show()
                     }
-                    2 -> {
+                    3 -> {
                         binding.etBaseUrl.setText("https://api.mistral.ai/v1")
                         binding.etModelName.setText("pixtral-large-latest")
                         Toast.makeText(this, "Đã chọn Mistral Pixtral Large", Toast.LENGTH_SHORT).show()
                     }
-                    3 -> {
+                    4 -> {
                         binding.etBaseUrl.setText("https://api.groq.com/openai/v1")
                         binding.etModelName.setText("llama-3.2-11b-vision-preview")
                         Toast.makeText(this, "Đã chọn Groq Vision", Toast.LENGTH_SHORT).show()
                     }
-                    4 -> {
+                    5 -> {
                         binding.etBaseUrl.setText("http://192.168.1.100:11434/v1")
                         binding.etModelName.setText("llava")
-                        Toast.makeText(this, "Đã chọn Ollama Local", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Đã chọn Ollama Cục bộ", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
