@@ -50,6 +50,22 @@
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
+                <!-- Nút chọn mẫu cấu hình sẵn nhanh (Presets) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPresetProvider"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginBottom="12dp"
+                    android:backgroundTint="#152033"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:text="⚡ CHỌN MẪU (OPENAI / MISTRAL / GROQ / OLLAMA)"
+                    android:textColor="@color/primary"
+                    android:textSize="12sp"
+                    app:cornerRadius="6dp"
+                    app:strokeColor="@color/primary"
+                    app:strokeWidth="1dp" />
+
                 <!-- Base URL -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
@@ -59,7 +75,9 @@
                     android:textColorHint="@color/text_secondary"
                     app:boxBackgroundColor="#1A2438"
                     app:boxStrokeColor="@color/primary"
-                    app:hintTextColor="@color/primary">
+                    app:hintTextColor="@color/primary"
+                    app:helperText="OpenAI: https://api.openai.com/v1 | Mistral: https://api.mistral.ai/v1"
+                    app:helperTextTextColor="@color/text_secondary">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etBaseUrl"
@@ -103,7 +121,9 @@
                     android:textColorHint="@color/text_secondary"
                     app:boxBackgroundColor="#1A2438"
                     app:boxStrokeColor="@color/primary"
-                    app:hintTextColor="@color/primary">
+                    app:hintTextColor="@color/primary"
+                    app:helperText="OpenAI: gpt-4o-mini | Mistral: pixtral-12b-2409"
+                    app:helperTextTextColor="@color/text_secondary">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etModelName"

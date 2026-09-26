@@ -21,6 +21,7 @@ data class AiModelProfile(
 ) {
     companion object {
         const val PROVIDER_OPENAI = "OPENAI"
+        const val PROVIDER_MISTRAL = "MISTRAL"
         const val PROVIDER_GROQ = "GROQ"
         const val PROVIDER_OPENROUTER = "OPENROUTER"
         const val PROVIDER_OLLAMA = "OLLAMA"

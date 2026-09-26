@@ -75,6 +75,10 @@ class SettingsActivity : AppCompatActivity() {
         binding.etApiKey.setText(preferenceManager.openAiApiKey)
         binding.etModelName.setText(preferenceManager.openAiModel)
 
+        binding.btnPresetProvider.setOnClickListener {
+            showPresetProviderDialog()
+        }
+
         binding.btnSaveAiConfig.setOnClickListener {
             val url = binding.etBaseUrl.text?.toString()?.trim() ?: ""
             val key = binding.etApiKey.text?.toString()?.trim() ?: ""
@@ -114,6 +118,50 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun showPresetProviderDialog() {
+        val presets = arrayOf(
+            "Mistral AI (Pixtral 12B - Vision & OCR)\nURL: https://api.mistral.ai/v1 | Model: pixtral-12b-2409",
+            "OpenAI (GPT-4o mini - Vision & Chat)\nURL: https://api.openai.com/v1 | Model: gpt-4o-mini",
+            "Mistral AI (Pixtral Large - Vision cao cấp)\nURL: https://api.mistral.ai/v1 | Model: pixtral-large-latest",
+            "Groq (Llama 3.2 11B Vision - Tốc độ cao)\nURL: https://api.groq.com/openai/v1 | Model: llama-3.2-11b-vision-preview",
+            "Ollama Local (LLaVA - Mạng nội bộ/Offline)\nURL: http://192.168.1.100:11434/v1 | Model: llava"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Chọn mẫu cấu hình nhà cung cấp AI")
+            .setItems(presets) { _, which ->
+                when (which) {
+                    0 -> {
+                        binding.etBaseUrl.setText("https://api.mistral.ai/v1")
+                        binding.etModelName.setText("pixtral-12b-2409")
+                        Toast.makeText(this, "Đã chọn Mistral Pixtral 12B. Hãy nhập Mistral API Key và lưu!", Toast.LENGTH_LONG).show()
+                    }
+                    1 -> {
+                        binding.etBaseUrl.setText("https://api.openai.com/v1")
+                        binding.etModelName.setText("gpt-4o-mini")
+                        Toast.makeText(this, "Đã chọn OpenAI GPT-4o mini", Toast.LENGTH_SHORT).show()
+                    }
+                    2 -> {
+                        binding.etBaseUrl.setText("https://api.mistral.ai/v1")
+                        binding.etModelName.setText("pixtral-large-latest")
+                        Toast.makeText(this, "Đã chọn Mistral Pixtral Large", Toast.LENGTH_SHORT).show()
+                    }
+                    3 -> {
+                        binding.etBaseUrl.setText("https://api.groq.com/openai/v1")
+                        binding.etModelName.setText("llama-3.2-11b-vision-preview")
+                        Toast.makeText(this, "Đã chọn Groq Vision", Toast.LENGTH_SHORT).show()
+                    }
+                    4 -> {
+                        binding.etBaseUrl.setText("http://192.168.1.100:11434/v1")
+                        binding.etModelName.setText("llava")
+                        Toast.makeText(this, "Đã chọn Ollama Local", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
     }
 
     private fun setupVisionAndAgentSection() {
