@@ -47,6 +47,19 @@ class MainActivity : AppCompatActivity() {
 
     private var pulseAnimator: ObjectAnimator? = null
 
+    private val screenCaptureLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            val serviceIntent = Intent(this, com.dinh.javis.vision.ScreenCaptureService::class.java).apply {
+                putExtra(com.dinh.javis.vision.ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                putExtra(com.dinh.javis.vision.ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
+            }
+            ContextCompat.startForegroundService(this, serviceIntent)
+            Toast.makeText(this, "Đã kích hoạt chế độ Thị giác màn hình JAVIS", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -243,6 +256,13 @@ class MainActivity : AppCompatActivity() {
                 }
                 .setNegativeButton("Đã hiểu", null)
                 .show()
+        }
+    }
+
+    fun requestScreenCaptureConsent() {
+        if (!com.dinh.javis.vision.ScreenCaptureService.isCapturing()) {
+            val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+            screenCaptureLauncher.launch(mpManager.createScreenCaptureIntent())
         }
     }
 

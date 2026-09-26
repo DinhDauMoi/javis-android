@@ -270,6 +270,84 @@ class JavisAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Lấy tên package của ứng dụng đang mở ở tiền cảnh (foreground active window)
+     */
+    fun getActivePackageName(): String? {
+        return rootInActiveWindow?.packageName?.toString()
+    }
+
+    /**
+     * Trích xuất cây phân cấp giao diện người dùng thành chuỗi văn bản cô đọng
+     * phục vụ lập kế hoạch cho ReAct Behavior Agent
+     */
+    fun dumpNodeHierarchy(maxNodes: Int = 80): String {
+        val root = rootInActiveWindow ?: return ""
+        val builder = StringBuilder()
+        val rect = Rect()
+        var nodeCount = 0
+
+        fun traverse(node: AccessibilityNodeInfo, depth: Int) {
+            if (nodeCount >= maxNodes) return
+            val text = node.text?.toString()?.trim() ?: ""
+            val desc = node.contentDescription?.toString()?.trim() ?: ""
+            val isClickable = node.isClickable
+            val isScrollable = node.isScrollable
+            val isEditable = node.isEditable
+
+            // Chỉ thu thập các phần tử có thông tin hữu ích hoặc tương tác được
+            if (text.isNotEmpty() || desc.isNotEmpty() || isClickable || isScrollable || isEditable) {
+                node.getBoundsInScreen(rect)
+                val className = node.className?.toString()?.substringAfterLast('.') ?: "View"
+                builder.append("[#${nodeCount + 1}] $className")
+                if (text.isNotEmpty()) builder.append(" text=\"$text\"")
+                if (desc.isNotEmpty()) builder.append(" desc=\"$desc\"")
+                builder.append(" bounds=(${rect.left},${rect.top},${rect.right},${rect.bottom})")
+                builder.append(" center=(${rect.centerX()},${rect.centerY()})")
+                if (isClickable) builder.append(" [clickable]")
+                if (isScrollable) builder.append(" [scrollable]")
+                if (isEditable) builder.append(" [editable]")
+                builder.append("\n")
+                nodeCount++
+            }
+
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                traverse(child, depth + 1)
+            }
+        }
+
+        traverse(root, 0)
+        return builder.toString()
+    }
+
+    /**
+     * Nhập văn bản vào ô nhập liệu đang focus hoặc ô nhập liệu đầu tiên tìm thấy
+     */
+    fun typeText(text: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val focusedNode = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: findFirstEditableNode(root)
+
+        if (focusedNode != null) {
+            val arguments = android.os.Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            return focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        }
+        return false
+    }
+
+    private fun findFirstEditableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isEditable) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = findFirstEditableNode(child)
+            if (result != null) return result
+        }
+        return null
+    }
+
     companion object {
         private const val TAG = "JavisAccessibility"
 

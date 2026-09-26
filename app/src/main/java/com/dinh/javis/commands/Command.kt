@@ -35,7 +35,9 @@ sealed class Command {
     // 5. Lệnh tùy chỉnh do người dùng thêm
     data class Custom(val actionType: String, val targetParam: String, val trigger: String) : Command()
 
-    // 6. Hỏi AI & Không xác định
+    // 6. Hỏi AI, Thị giác máy tính & Tác vụ đa bước Behavior Agent
+    data class RunBehaviorAgent(val goal: String) : Command()
+    data class AnalyzeScreen(val prompt: String) : Command()
     data class AskAi(val prompt: String) : Command()
     data class Unknown(val rawText: String) : Command()
 }
