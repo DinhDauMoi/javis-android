@@ -1,7 +1,9 @@
 package com.dinh.javis.voice
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +11,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.dinh.javis.utils.PermissionHelper
 import com.openwakeword.OpenWakeWord
 
@@ -79,7 +82,7 @@ class HotwordManager(
      * Bật chức năng chờ gọi "javis"
      */
     fun start() {
-        if (!PermissionHelper.hasPermission(context, android.Manifest.permission.RECORD_AUDIO)) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             val errMsg = "Chưa cấp quyền Micro cho JAVIS"
             onLogMessage(errMsg, false, "LỖI")
             speaker.speak(errMsg)

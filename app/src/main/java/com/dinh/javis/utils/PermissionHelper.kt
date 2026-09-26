@@ -60,6 +60,13 @@ object PermissionHelper {
     }
 
     /**
+     * Kiểm tra xem một quyền cụ thể đã được cấp hay chưa
+     */
+    fun hasPermission(context: Context, permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
      * Yêu cầu cấp các quyền runtime còn thiếu
      */
     fun requestCorePermissions(activity: Activity) {
