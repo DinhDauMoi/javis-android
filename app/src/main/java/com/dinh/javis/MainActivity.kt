@@ -204,6 +204,45 @@ class MainActivity : AppCompatActivity() {
     private fun checkAppPermissions() {
         if (!PermissionHelper.hasCorePermissions(this)) {
             PermissionHelper.requestCorePermissions(this)
+        } else {
+            checkOverlayAndBatteryPermissions()
+        }
+    }
+
+    private fun checkOverlayAndBatteryPermissions() {
+        // 1. Xin quyền vẽ đè để hiển thị viền sáng màn hình và nút mic nổi
+        if (!PermissionHelper.canDrawOverlays(this)) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Hiệu ứng viền sáng & Nút nổi")
+                .setMessage("JAVIS cần quyền 'Vẽ lên trên ứng dụng khác' để hiển thị hiệu ứng viền màn hình phát sáng đa sắc (kiểu Siri / Google Assistant) khi bạn gọi 'javis' lúc xem TikTok hoặc dùng app khác.")
+                .setPositiveButton("Cấp quyền") { _, _ ->
+                    PermissionHelper.requestOverlayPermission(this)
+                }
+                .setNegativeButton("Để sau") { _, _ ->
+                    checkBatteryOptimizationPermission()
+                }
+                .show()
+        } else {
+            checkBatteryOptimizationPermission()
+        }
+    }
+
+    private fun checkBatteryOptimizationPermission() {
+        // 2. Xin quyền bỏ qua tối ưu pin (tránh ColorOS bóp service ngầm khi ở nền)
+        if (!PermissionHelper.isIgnoringBatteryOptimizations(this)) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Tối ưu chạy nền (ColorOS / OPPO)")
+                .setMessage(
+                    "Để JAVIS luôn nhận diện 'javis' tức thì khi đang xem TikTok hoặc tắt màn hình:\n\n" +
+                    "1. Cho phép 'Tắt tối ưu pin' (bấm nút bên dưới).\n" +
+                    "2. Khóa ứng dụng trong màn hình Đa nhiệm (vuốt mở đa nhiệm → kéo app JAVIS xuống hoặc bấm ⋮ → chọn Khóa 🔒).\n" +
+                    "3. Bật 'Cho phép tự khởi chạy' và 'Cho phép chạy ngầm' trong Cài đặt pin của máy."
+                )
+                .setPositiveButton("Tắt tối ưu pin") { _, _ ->
+                    PermissionHelper.requestIgnoreBatteryOptimizations(this)
+                }
+                .setNegativeButton("Đã hiểu", null)
+                .show()
         }
     }
 
@@ -274,6 +313,7 @@ class MainActivity : AppCompatActivity() {
                 if (preferenceManager.isWakeWordEnabled) {
                     hotwordManager.start()
                 }
+                checkOverlayAndBatteryPermissions()
             } else {
                 val deniedMsg = "Bạn đã từ chối quyền Micro. JAVIS không thể nghe bạn nói nếu không có quyền này."
                 appendMessage(deniedMsg, isUser = false, tag = "CẢNH BÁO")

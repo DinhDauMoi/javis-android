@@ -160,4 +160,37 @@ object PermissionHelper {
         }
         activity.startActivity(intent)
     }
+
+    /**
+     * Kiểm tra xem ứng dụng đã được miễn trừ tối ưu hóa pin chưa (ColorOS/Oppo)
+     */
+    fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            return pm?.isIgnoringBatteryOptimizations(context.packageName) == true
+        }
+        return true
+    }
+
+    /**
+     * Mở hộp thoại xin quyền bỏ qua tối ưu hóa pin
+     */
+    fun requestIgnoreBatteryOptimizations(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                try {
+                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        }
+    }
 }

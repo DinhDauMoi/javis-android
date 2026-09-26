@@ -51,7 +51,7 @@ class HotwordService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Dịch vụ Wake Word JAVIS",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Duy trì lắng nghe từ khóa 'javis' khi xem TikTok và các ứng dụng khác"
                 setShowBadge(false)
@@ -78,7 +78,7 @@ class HotwordService : Service() {
             .setSmallIcon(R.drawable.ic_mic)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }

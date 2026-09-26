@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.dinh.javis.commands.Command
 import com.dinh.javis.commands.CommandParser
 import com.dinh.javis.data.PreferenceManager
+import com.dinh.javis.ui.GlowOverlayManager
 import com.dinh.javis.utils.PermissionHelper
 import com.openwakeword.OpenWakeWord
 import java.util.Locale
@@ -44,6 +45,7 @@ class HotwordManager(
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val glowOverlayManager = GlowOverlayManager(context, preferenceManager)
 
     private var openWakeWord: OpenWakeWord? = null
     private var speechRecognizer: SpeechRecognizer? = null
@@ -55,6 +57,12 @@ class HotwordManager(
     // Đếm số lần thử nghe lại khi không phát hiện tiếng nói (tối đa 1 lần thử lại)
     private var commandRetryCount = 0
     private val MAX_COMMAND_RETRIES = 1
+
+    // Đo độ trễ từng bước (timestamp profiling)
+    private var tWakeDetected = 0L
+    private var tBeepStarted = 0L
+    private var tSttStart = 0L
+    private var tSttReady = 0L
 
     // Debounce chống lặp lệnh trong vòng 1 giây (1000ms)
     private var lastCommandText = ""
@@ -108,6 +116,7 @@ class HotwordManager(
     fun stop() {
         isRunning = false
         mainHandler.removeCallbacks(commandTimeoutRunnable)
+        glowOverlayManager.hide()
 
         // Dừng và hủy OpenWakeWord
         try {
@@ -136,9 +145,12 @@ class HotwordManager(
         if (!isRunning) {
             start()
         }
+        tWakeDetected = System.currentTimeMillis()
+        tBeepStarted = tWakeDetected
         pauseHotwordDetector()
         speaker.playWakeBeep()
         onStatusChange("Đang kích hoạt...", true, false)
+        glowOverlayManager.show()
         mainHandler.postDelayed({
             if (isRunning && !isListeningCommand && !isPausedForTts) {
                 commandRetryCount = 0
@@ -283,16 +295,22 @@ class HotwordManager(
     private fun onWakeWordTriggered() {
         if (!isRunning || isListeningCommand) return
 
-        Log.i(TAG, "Bắt được 'javis' -> Phát âm thanh thức dậy và chờ beep xong + 300ms")
+        tWakeDetected = System.currentTimeMillis()
+        Log.i(TAG, "⏱️ [T0 - Wake] Bắt được 'javis' lúc $tWakeDetected ms -> Bật viền sáng và phát beep")
 
         // 1. Tạm dừng ngay wake word detector để nhường mic cho SpeechRecognizer
         pauseHotwordDetector()
 
-        // 2. Phát beep ngắn (120ms)
+        // 2. Bật ngay hiệu ứng viền màn hình phát sáng đa sắc
+        glowOverlayManager.show()
+
+        // 3. Phát beep ngắn (120ms)
+        tBeepStarted = System.currentTimeMillis()
         speaker.playWakeBeep()
         onStatusChange("Đang kích hoạt...", true, false)
+        Log.i(TAG, "⏱️ [T1 - Beep] Phát beep lúc $tBeepStarted ms (+${tBeepStarted - tWakeDetected}ms từ T0)")
 
-        // 3. Chờ beep phát xong (120ms) + 300ms = 420ms rồi mới bật SpeechRecognizer (tránh beep lấn mất chữ đầu)
+        // 4. Chờ beep phát xong (120ms) + 300ms = 420ms rồi mới bật SpeechRecognizer (tránh beep lấn mất chữ đầu)
         mainHandler.postDelayed({
             if (isRunning && !isListeningCommand && !isPausedForTts) {
                 commandRetryCount = 0
@@ -328,8 +346,12 @@ class HotwordManager(
 
     private fun startCommandListening() {
         isListeningCommand = true
+        tSttStart = System.currentTimeMillis()
+        Log.i(TAG, "⏱️ [T2 - STT Start] Bật SpeechRecognizer lúc $tSttStart ms (+${tSttStart - tBeepStarted}ms từ Beep, tổng: +${tSttStart - tWakeDetected}ms)")
+
         onStatusChange("🎙️ ĐANG NGHE... BẠN NÓI ĐI!", true, false)
         HotwordService.start(context, "🎙️ Đang nghe lệnh...")
+        glowOverlayManager.show()
 
         val recognizer = getOrCreateSpeechRecognizer()
         if (recognizer == null) {
@@ -385,6 +407,7 @@ class HotwordManager(
     private fun cancelCommandListening() {
         mainHandler.removeCallbacks(commandTimeoutRunnable)
         isListeningCommand = false
+        glowOverlayManager.hide()
         try {
             speechRecognizer?.stopListening()
             speechRecognizer?.cancel()
@@ -412,18 +435,21 @@ class HotwordManager(
             Log.w(TAG, "$reason -> Đã hết lượt nghe lại, quay lại chờ wake word")
             commandRetryCount = 0
             cancelCommandListening()
+            glowOverlayManager.hide()
             resumeHotwordDetector(delayMs = 300)
         }
     }
 
     private fun createCommandRecognitionListener() = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
-            Log.d(TAG, "SpeechRecognizer sẵn sàng nhận giọng nói lệnh")
+            tSttReady = System.currentTimeMillis()
+            Log.i(TAG, "⏱️ [T3 - STT Ready] Mic sẵn sàng nghe lệnh lúc $tSttReady ms (+${tSttReady - tSttStart}ms từ STT start, tổng: +${tSttReady - tWakeDetected}ms)")
             onStatusChange("🎙️ SẴN SÀNG! MỜI BẠN NÓI...", true, false)
         }
 
         override fun onBeginningOfSpeech() {
-            Log.d(TAG, "Phát hiện người dùng bắt đầu nói lệnh")
+            val tSpeech = System.currentTimeMillis()
+            Log.i(TAG, "⏱️ [T4 - Speaking] Người dùng bắt đầu nói lúc $tSpeech ms (+${tSpeech - tSttReady}ms từ khi mic sẵn sàng)")
             onStatusChange("🎙️ Đang thu âm câu lệnh...", true, false)
         }
 
@@ -448,6 +474,7 @@ class HotwordManager(
             } else {
                 commandRetryCount = 0
                 isListeningCommand = false
+                glowOverlayManager.hide()
                 if (errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || errorCode == SpeechRecognizer.ERROR_CLIENT) {
                     destroySpeechRecognizer()
                 }
@@ -462,7 +489,10 @@ class HotwordManager(
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = matches?.firstOrNull()?.trim() ?: ""
 
-            Log.d(TAG, "Nhận diện lệnh thành công (final): \"$text\"")
+            val tDone = System.currentTimeMillis()
+            Log.i(TAG, "⏱️ [T5 - Final Result] Nhận diện lệnh thành công: \"$text\" lúc $tDone ms (Tổng chu trình: ${tDone - tWakeDetected}ms)")
+
+            glowOverlayManager.hide()
 
             if (text.isNotEmpty()) {
                 commandRetryCount = 0
@@ -473,6 +503,7 @@ class HotwordManager(
                 } else {
                     lastCommandText = text
                     lastCommandTime = now
+                    onLogMessage("⏱️ Chu trình: Wake->Beep(+${tBeepStarted - tWakeDetected}ms) -> STT(+${tSttStart - tBeepStarted}ms) -> Sẵn sàng(+${tSttReady - tSttStart}ms) -> Xong(+${tDone - tSttReady}ms) | Tổng: ${tDone - tWakeDetected}ms", false, "TIMING")
                     onCommandRecognized(text)
                 }
             } else {
@@ -495,9 +526,11 @@ class HotwordManager(
                 // TĂNG TỐC ĐỘ NHẬN LỆNH: Ngay khi partial result chứa từ khóa lệnh đã khớp thì thực hiện luôn!
                 val command = commandParser.parse(partial)
                 if (command !is Command.Unknown && command !is Command.AskAi) {
-                    Log.i(TAG, "⚡ Khớp lệnh siêu tốc từ kết quả tạm (partial): \"$partial\" -> Thực thi ngay lập tức!")
+                    val tDone = System.currentTimeMillis()
+                    Log.i(TAG, "⚡ [T5 - Partial Instant] Khớp lệnh siêu tốc: \"$partial\" lúc $tDone ms (Tổng chu trình: ${tDone - tWakeDetected}ms)")
                     mainHandler.removeCallbacks(commandTimeoutRunnable)
                     isListeningCommand = false
+                    glowOverlayManager.hide()
                     try { speechRecognizer?.stopListening() } catch (_: Exception) {}
 
                     val now = System.currentTimeMillis()
@@ -505,6 +538,7 @@ class HotwordManager(
                         lastCommandText = partial
                         lastCommandTime = now
                         commandRetryCount = 0
+                        onLogMessage("⚡ Khớp lệnh tức thì: Wake->Beep(+${tBeepStarted - tWakeDetected}ms) -> STT(+${tSttStart - tBeepStarted}ms) -> Khớp(+${tDone - tSttStart}ms) | Tổng: ${tDone - tWakeDetected}ms", false, "TIMING")
                         onCommandRecognized(partial)
                     }
 

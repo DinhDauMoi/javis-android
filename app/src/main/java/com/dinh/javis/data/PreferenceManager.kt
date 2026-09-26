@@ -39,6 +39,10 @@ class PreferenceManager(context: Context) {
         get() = prefs.getFloat(KEY_WAKEWORD_THRESHOLD, 0.30f)
         set(value) = prefs.edit().putFloat(KEY_WAKEWORD_THRESHOLD, value).apply()
 
+    var isGlowOverlayEnabled: Boolean
+        get() = prefs.getBoolean(KEY_GLOW_OVERLAY_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_GLOW_OVERLAY_ENABLED, value).apply()
+
     companion object {
         private const val PREF_NAME = "javis_preferences"
         private const val KEY_BASE_URL = "openai_base_url"
@@ -48,5 +52,6 @@ class PreferenceManager(context: Context) {
         private const val KEY_PICOVOICE_KEY = "picovoice_key"
         private const val KEY_FLOATING_MIC = "floating_mic_enabled"
         private const val KEY_WAKEWORD_THRESHOLD = "wakeword_threshold"
+        private const val KEY_GLOW_OVERLAY_ENABLED = "glow_overlay_enabled"
     }
 }

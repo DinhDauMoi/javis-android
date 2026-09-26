@@ -103,6 +103,47 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.makeText(this@SettingsActivity, "Đã lưu độ nhạy: ${String.format(Locale.US, "%.2f", finalThreshold)}", Toast.LENGTH_SHORT).show()
             }
         })
+
+        // Bật/tắt viền sáng màn hình khi gọi AI
+        binding.switchGlowOverlay.isChecked = preferenceManager.isGlowOverlayEnabled
+        binding.switchGlowOverlay.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked && !PermissionHelper.canDrawOverlays(this)) {
+                Toast.makeText(this, "Vui lòng cấp quyền 'Vẽ lên trên ứng dụng khác' để hiển thị viền sáng", Toast.LENGTH_LONG).show()
+                PermissionHelper.requestOverlayPermission(this)
+                binding.switchGlowOverlay.isChecked = false
+                return@setOnCheckedChangeListener
+            }
+            preferenceManager.isGlowOverlayEnabled = isChecked
+        }
+
+        // Nút hướng dẫn tối ưu chạy nền ColorOS / OPPO
+        binding.btnBatteryOptimization.setOnClickListener {
+            showBatteryOptimizationGuide()
+        }
+    }
+
+    private fun showBatteryOptimizationGuide() {
+        AlertDialog.Builder(this)
+            .setTitle("Tối ưu chạy nền (ColorOS / OPPO)")
+            .setMessage(
+                "Để JAVIS luôn nhận diện 'javis' tức thì khi đang xem TikTok hoặc tắt màn hình:\n\n" +
+                "1. Tắt tối ưu hóa pin (bấm nút bên dưới).\n" +
+                "2. Khóa ứng dụng trong màn hình Đa nhiệm (vuốt mở đa nhiệm → kéo app JAVIS xuống hoặc bấm ⋮ → chọn Khóa 🔒).\n" +
+                "3. Bật 'Cho phép tự khởi chạy' và 'Cho phép chạy ngầm' trong Cài đặt pin của máy."
+            )
+            .setPositiveButton("Tắt tối ưu pin") { _, _ ->
+                PermissionHelper.requestIgnoreBatteryOptimizations(this)
+            }
+            .setNeutralButton("Cài đặt ứng dụng") { _, _ ->
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton("Đã hiểu", null)
+            .show()
     }
 
     private fun setupFloatingMicSection() {

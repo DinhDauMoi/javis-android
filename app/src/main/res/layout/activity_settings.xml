@@ -215,6 +215,39 @@
                         android:textSize="12sp" />
                 </LinearLayout>
 
+                <!-- Công tắc bật/tắt viền sáng màn hình -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchGlowOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Viền sáng màn hình khi gọi AI"
+                    android:textColor="@color/text_primary"
+                    app:thumbTint="@color/primary"
+                    app:trackTint="#4000E5FF" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="Hiệu ứng viền gradient phát sáng đa sắc quanh 4 cạnh màn hình (kiểu Siri / Google Assistant) khi đang nghe lệnh"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <!-- Nút hướng dẫn tối ưu chạy nền ColorOS / OPPO -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnBatteryOptimization"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:backgroundTint="#1A2438"
+                    android:text="⚡ Tối ưu chạy nền (ColorOS / OPPO)"
+                    android:textColor="@color/primary"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="@color/primary"
+                    app:strokeWidth="1dp" />
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/tilPicovoiceKey"
                     android:layout_width="match_parent"
