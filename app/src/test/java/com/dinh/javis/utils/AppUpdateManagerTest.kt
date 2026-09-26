@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Unit tests cho logic trích xuất versionCode và kiểm tra phiên bản mới từ GitHub Releases
+ * Unit tests for versionCode extraction logic and update availability checking from GitHub Releases
  */
 class AppUpdateManagerTest {
 
