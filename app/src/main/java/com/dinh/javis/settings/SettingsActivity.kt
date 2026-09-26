@@ -103,11 +103,30 @@ class SettingsActivity : AppCompatActivity() {
             val key = binding.etApiKey.text?.toString()?.trim() ?: ""
             val model = binding.etModelName.text?.toString()?.trim() ?: "gpt-4o-mini"
 
-            preferenceManager.openAiBaseUrl = if (url.isNotEmpty()) url else "https://api.openai.com/v1"
-            preferenceManager.openAiApiKey = key
-            preferenceManager.openAiModel = if (model.isNotEmpty()) model else "gpt-4o-mini"
+            val finalUrl = if (url.isNotEmpty()) url else "https://api.openai.com/v1"
+            val finalModel = if (model.isNotEmpty()) model else "gpt-4o-mini"
 
-            Toast.makeText(this, getString(R.string.settings_saved), Toast.LENGTH_SHORT).show()
+            preferenceManager.openAiBaseUrl = finalUrl
+            preferenceManager.openAiApiKey = key
+            preferenceManager.openAiModel = finalModel
+
+            lifecycleScope.launch {
+                val activeProfile = database.aiModelProfileDao().getActiveProfile()
+                if (activeProfile != null) {
+                    val alias = activeProfile.secretKeyAlias.ifBlank { "default_key_alias" }
+                    if (key.isNotBlank()) {
+                        com.dinh.javis.security.KeystoreManager(this@SettingsActivity).encrypt(alias, key)
+                    }
+                    val updatedProfile = activeProfile.copy(
+                        baseUrl = finalUrl,
+                        chatModelId = finalModel,
+                        visionModelId = finalModel,
+                        planningModelId = finalModel
+                    )
+                    database.aiModelProfileDao().insertProfile(updatedProfile)
+                }
+                Toast.makeText(this@SettingsActivity, getString(R.string.settings_saved), Toast.LENGTH_SHORT).show()
+            }
         }
 
         binding.btnTestAiConnection.setOnClickListener {
