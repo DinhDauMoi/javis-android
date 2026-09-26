@@ -54,6 +54,9 @@ class OpenAiCompatibleClient(
         if (trimmed.endsWith("/chat/completions")) {
             return trimmed
         }
+        if (trimmed.endsWith("/api/v1")) {
+            return "$trimmed/chat/completions"
+        }
         if (!trimmed.endsWith("/v1")) {
             trimmed = "$trimmed/v1"
         }
@@ -347,7 +350,9 @@ class OpenAiCompatibleClient(
             .post(requestBody)
 
         if (apiKey.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+            val trimmedKey = apiKey.trim()
+            requestBuilder.addHeader("Authorization", "Bearer $trimmedKey")
+            requestBuilder.addHeader("x-api-key", trimmedKey)
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
@@ -445,7 +450,9 @@ class OpenAiCompatibleClient(
                 .post(requestBody)
 
             if (apiKey.isNotBlank()) {
-                requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+                val trimmedKey = apiKey.trim()
+                requestBuilder.addHeader("Authorization", "Bearer $trimmedKey")
+                requestBuilder.addHeader("x-api-key", trimmedKey)
             }
 
             client.newCall(requestBuilder.build()).execute().use { response ->
