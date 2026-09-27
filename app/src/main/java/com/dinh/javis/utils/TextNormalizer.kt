@@ -67,53 +67,53 @@ object TextNormalizer {
     }
 
     /**
-     * Dọn dẹp tất cả ký hiệu định dạng Markdown (**, *, #, ```, ``, [], (), ~, v.v.)
-     * để TTS (Text-To-Speech) đọc giọng nói tiếng Việt tự nhiên, không bị phát âm "sao sao", "hoa thị", "thăng".
+     * Sanitizes all Markdown formatting symbols (**, *, #, ```, ``, [], (), ~, etc.)
+     * to ensure Text-To-Speech (TTS) reads clean, natural spoken text without pronouncing raw Markdown symbols.
      */
     fun stripMarkdownForSpeech(input: String?): String {
         if (input.isNullOrBlank()) return ""
 
         var text = input
 
-        // 1. Loại bỏ các khối code (code block ```...```)
+        // 1. Remove multiline code blocks (```...```)
         text = text.replace(Regex("(?s)```[a-zA-Z0-9_-]*\\n?(.*?)```")) { matchResult ->
             matchResult.groupValues[1]
         }
 
-        // 2. Loại bỏ code inline (`...`)
+        // 2. Remove inline code backticks (`...`)
         text = text.replace(Regex("`([^`]+)`"), "$1")
 
-        // 3. Chuyển đổi link markdown [Anchor Text](http://...) -> Anchor Text
+        // 3. Convert markdown links [Anchor Text](http://...) -> Anchor Text
         text = text.replace(Regex("\\[([^\\]]+)\\]\\(([^)]+)\\)"), "$1")
 
-        // 4. Loại bỏ URL trực tiếp (http://, https://) để TTS không đọc "h-t-t-p-s-hai-chấm..."
+        // 4. Remove raw URLs (http://, https://) so TTS avoids reading "h-t-t-p-s..."
         text = text.replace(Regex("https?://\\S+"), "")
 
-        // 5. Loại bỏ tiêu đề Markdown (# Header, ## Header, ### Header)
+        // 5. Remove Markdown headers (# Header, ## Header, ### Header)
         text = text.replace(Regex("(?m)^#{1,6}\\s*"), "")
 
-        // 6. Loại bỏ ký hiệu danh sách (- item, * item, + item, 1. item)
+        // 6. Remove list bullets (- item, * item, + item, 1. item)
         text = text.replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
         text = text.replace(Regex("(?m)^\\s*\\d+\\.\\s+"), "")
 
-        // 7. Loại bỏ trích dẫn (> quote) và đường kẻ ngang (---, ***, ___)
+        // 7. Remove blockquotes (> quote) and horizontal rules (---, ***, ___)
         text = text.replace(Regex("(?m)^>\\s*"), "")
         text = text.replace(Regex("(?m)^[-*_]{3,}\\s*$"), "")
 
-        // 8. Loại bỏ định dạng đậm/nghiêng (***, **, *, ___, __, _)
+        // 8. Remove bold and italic markers (***, **, *, ___, __, _)
         text = text.replace(Regex("\\*\\*\\*|___"), "")
         text = text.replace(Regex("\\*\\*|__"), "")
         text = text.replace(Regex("\\*|_"), "")
 
-        // 9. Loại bỏ gạch ngang chữ (~~text~~)
+        // 9. Remove strikethrough (~~text~~)
         text = text.replace(Regex("~~([^~]+)~~"), "$1")
         text = text.replace("~~", "")
 
-        // 10. Loại bỏ bảng markdown (ký tự |) và dấu huyền, ngoặc rác còn sót lại
+        // 10. Replace table pipes and stray backticks
         text = text.replace("|", " ")
         text = text.replace("`", "")
 
-        // 11. Chuẩn hóa khoảng trắng kép và dòng trống thừa
+        // 11. Normalize multiple spaces and trailing lines
         return text.replace(Regex("\\s+"), " ").trim()
     }
 }

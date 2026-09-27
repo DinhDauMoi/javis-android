@@ -12,8 +12,17 @@ import kotlinx.coroutines.withContext
  */
 class OpenAiClient(private val preferenceManager: PreferenceManager) {
 
+    private val chatMemory = ChatMemoryManager()
+
     /**
-     * Send prompt to AI and receive concise spoken response in Vietnamese
+     * Clear active compact chat memory history
+     */
+    fun clearChatMemory() {
+        chatMemory.clearMemory()
+    }
+
+    /**
+     * Send prompt to AI and receive concise spoken response in Vietnamese with compact conversation context
      */
     suspend fun askAi(prompt: String): String = withContext(Dispatchers.IO) {
         val apiKey = preferenceManager.openAiApiKey.trim()
@@ -37,14 +46,21 @@ class OpenAiClient(private val preferenceManager: PreferenceManager) {
                 role = "system",
                 content = "Bạn là JAVIS, trợ lý AI cá nhân bằng tiếng Việt. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để trò chuyện. Tránh dùng ký hiệu định dạng markdown như **, #, *."
             )
-            val userMessage = ChatMessage(role = "user", content = prompt)
+
+            val compactHistory = chatMemory.getCompactHistory()
+            val fullMessages = mutableListOf<ChatMessage>()
+            fullMessages.add(systemMessage)
+            fullMessages.addAll(compactHistory)
+            fullMessages.add(ChatMessage(role = "user", content = prompt))
 
             val response = client.chat(
-                messages = listOf(systemMessage, userMessage),
+                messages = fullMessages,
                 options = ModelOptions(temperature = 0.7, maxTokens = 150)
             )
 
             if (response.isNotBlank()) {
+                chatMemory.addMessage("user", prompt)
+                chatMemory.addMessage("assistant", response)
                 return@withContext response
             }
             return@withContext "Tôi đã nghe bạn nói nhưng AI không đưa ra phản hồi phù hợp."
