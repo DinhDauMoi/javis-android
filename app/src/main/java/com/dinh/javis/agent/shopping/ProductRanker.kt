@@ -125,11 +125,15 @@ class ProductRanker {
         var score = 10.0f
 
         // A. Rating & Review volume score
-        val rating = candidate.rating ?: 4.0f
-        val reviews = candidate.reviewCount ?: 0
-        // Weight rating scaled by log of review volume: max 50 points
-        val reviewFactor = (ln((reviews + 1).toDouble()) / ln(10000.0)).toFloat().coerceIn(0.1f, 1.0f)
-        score += (rating / 5.0f) * 40.0f * reviewFactor
+        val rating = candidate.rating
+        val volume = candidate.reviewCount ?: candidate.salesCount ?: 0
+        if (rating != null) {
+            val reviewFactor = (ln((volume + 1).toDouble()) / ln(10000.0)).toFloat().coerceIn(0.1f, 1.0f)
+            score += (rating / 5.0f) * 40.0f * reviewFactor
+        } else if (volume > 0) {
+            val reviewFactor = (ln((volume + 1).toDouble()) / ln(10000.0)).toFloat().coerceIn(0.1f, 1.0f)
+            score += 20.0f * reviewFactor
+        }
 
         // B. Seller reputation bonus
         if (candidate.isMall) {

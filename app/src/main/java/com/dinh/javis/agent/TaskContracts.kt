@@ -92,6 +92,7 @@ data class TaskRequest(
         const val CATEGORY_NAVIGATION = "navigation"
         const val CATEGORY_SEARCH = "search"
         const val CATEGORY_MEDIA = "media"
+        const val CATEGORY_SHOPPING = "shopping"
     }
 }
 

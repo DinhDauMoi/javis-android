@@ -57,7 +57,10 @@ class ScreenObservationEngine(private val context: Context) {
     /** Minimum node hierarchy text length to consider Tier 1 sufficient. */
     private val MIN_NODE_TEXT_LENGTH = 100
 
-    suspend fun observeScreen(captureVisual: Boolean = true): ObservationResult {
+    suspend fun observeScreen(
+        captureVisual: Boolean = true,
+        forceOcr: Boolean = false
+    ): ObservationResult {
         val capturedAt = SystemClock.elapsedRealtime()
         val evidenceSources = mutableSetOf<EvidenceSource>()
 
@@ -80,16 +83,17 @@ class ScreenObservationEngine(private val context: Context) {
         var ocrText = ""
         val ocrBlocks = mutableListOf<OcrBlock>()
 
-        // Tier 3: Capture screenshot only when visual mode is enabled and session is active
-        if (captureVisual && ScreenCaptureService.isCapturing()) {
+        // Tier 3 / Forced OCR: Capture screenshot when visual mode or forced OCR is active
+        val shouldCaptureBitmap = (captureVisual || forceOcr) && ScreenCaptureService.isCapturing()
+        if (shouldCaptureBitmap) {
             bitmap = ScreenCaptureService.instance?.captureBitmap()
             if (bitmap != null) {
                 evidenceSources.add(EvidenceSource.SCREENSHOT_CAPTURED)
 
-                // Tier 2: Run OCR when node hierarchy has insufficient evidence
-                // (e.g., WebView, Canvas-based apps, games)
+                // Tier 2: Run OCR when forced or when node hierarchy has insufficient evidence
+                // (e.g., WebView, Canvas-based apps, Shopee product card grids)
                 val nodeTextSufficient = nodeHierarchy.length >= MIN_NODE_TEXT_LENGTH
-                if (!nodeTextSufficient) {
+                if (forceOcr || !nodeTextSufficient) {
                     val ocrResult = ocrEngine.recognizeText(bitmap)
                     ocrText = ocrResult.fullText
                     ocrBlocks.addAll(ocrResult.blocks)
@@ -105,7 +109,8 @@ class ScreenObservationEngine(private val context: Context) {
             ocrText = ocrText.ifBlank { null },
             screenshotWidth = screenWidth,
             screenshotHeight = screenHeight,
-            currentPackage = activePackage
+            currentPackage = activePackage,
+            ocrBlocks = ocrBlocks
         )
 
         return ObservationResult(

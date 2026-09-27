@@ -6,21 +6,25 @@ import com.dinh.javis.agent.AgentCallback
 import com.dinh.javis.agent.TaskOutcome
 import com.dinh.javis.service.JavisAccessibilityService
 import com.dinh.javis.utils.AppHelper
+import com.dinh.javis.utils.TextNormalizer
+import com.dinh.javis.vision.OcrBlock
+import com.dinh.javis.vision.Point2D
 import com.dinh.javis.vision.ScreenObservationEngine
+import com.dinh.javis.vision.ScreenTargetResolver
 import kotlinx.coroutines.delay
 import java.util.regex.Pattern
 
 /**
  * Shopee shopping skill module (Section 5, 8, 10).
  * Strictly read-only navigation, candidate extraction, deterministic ranking,
- * and verified detail page handoff.
+ * physical coordinate fallback, and verified detail page handoff.
  *
  * SAFETY INVARIANT: Never performs cart additions, purchases, seller messaging,
  * or account actions.
  */
 class ShopeeShoppingSkill(
-    private val context: Context,
-    private val observationEngine: ScreenObservationEngine = ScreenObservationEngine(context),
+    private val context: Context? = null,
+    private val observationEngine: ScreenObservationEngine? = null,
     private val ranker: ProductRanker = ProductRanker()
 ) {
 
@@ -36,8 +40,20 @@ class ShopeeShoppingSkill(
     ): ShoppingResult {
         callback?.onThought("Đang chuẩn bị tìm kiếm sản phẩm: \"${request.query}\" trên Shopee...")
 
+        val appContext = context
+        if (appContext == null) {
+            val msg = "Lỗi hệ thống: Context không khả dụng để thực hiện tác vụ."
+            callback?.onCompleted(false, msg)
+            return ShoppingResult(
+                outcome = TaskOutcome.FAILED,
+                summaryVi = msg
+            )
+        }
+
+        val obsEngine = observationEngine ?: ScreenObservationEngine(appContext)
+
         // 1. Verify Shopee is installed
-        val (installed, _) = AppHelper.openAppByName(context, "shopee")
+        val (installed, _) = AppHelper.openAppByName(appContext, "shopee")
         if (!installed) {
             val msg = "Chưa cài đặt ứng dụng Shopee trên thiết bị này."
             callback?.onCompleted(false, msg)
@@ -66,14 +82,14 @@ class ShopeeShoppingSkill(
 
         // 2. Locate search bar and enter query
         callback?.onActionExecuted("SEARCH", "Nhập từ khóa tìm kiếm: ${request.query}")
-        val searchInputClicked = accessibilityService.clickNodeByText("Tìm kiếm") ||
+        accessibilityService.clickNodeByText("Tìm kiếm") ||
                 accessibilityService.clickNodeByText("Shopee") ||
                 accessibilityService.clickNodeByText("Search")
 
         delay(1200)
 
         // Type query into search field
-        val typed = accessibilityService.typeText(request.query)
+        accessibilityService.typeText(request.query)
         delay(1000)
 
         // Submit search (press search button or click search suggestion)
@@ -85,15 +101,32 @@ class ShopeeShoppingSkill(
 
         // 3. Collect candidates across search results
         val candidates = mutableListOf<ProductCandidate>()
+        var lastOcrBlocks = listOf<OcrBlock>()
         var page = 1
         val maxPages = request.executionLimits.maxSearchResultPages
         val maxCandidates = request.executionLimits.maxCandidates
 
         while (page <= maxPages && candidates.size < maxCandidates) {
-            val hierarchy = accessibilityService.dumpNodeHierarchy(maxNodes = 100)
-            val extracted = extractProductCandidates(hierarchy)
+            val obsResult = obsEngine.observeScreen(captureVisual = false, forceOcr = true)
+            val hierarchy = obsResult.observation.nodeHierarchyText
+                ?: accessibilityService.dumpNodeHierarchy(maxNodes = 100)
+            lastOcrBlocks = obsResult.ocrBlocks
 
-            for (cand in extracted) {
+            val extractedNodes = extractProductCandidates(hierarchy)
+            val extractedOcr = if (lastOcrBlocks.isNotEmpty()) {
+                extractCandidatesFromOcr(lastOcrBlocks)
+            } else {
+                emptyList()
+            }
+
+            // Combine candidates prioritizing node candidates then OCR candidates
+            for (cand in extractedNodes) {
+                if (candidates.none { isSameProduct(it.title, cand.title) }) {
+                    candidates.add(cand)
+                    if (candidates.size >= maxCandidates) break
+                }
+            }
+            for (cand in extractedOcr) {
                 if (candidates.none { isSameProduct(it.title, cand.title) }) {
                     candidates.add(cand)
                     if (candidates.size >= maxCandidates) break
@@ -138,23 +171,48 @@ class ShopeeShoppingSkill(
         val bestCandidate = bestEvaluation.candidate
         callback?.onThought("Sản phẩm phù hợp nhất: \"${bestCandidate.title}\" (${bestEvaluation.reasonVi})")
 
-        // 5. Open the selected product detail page
+        // 5. Open the selected product detail page (with coordinate fallback)
         callback?.onActionExecuted("OPEN_PRODUCT", "Mở sản phẩm: ${bestCandidate.title}")
-        val clicked = accessibilityService.clickNodeByText(bestCandidate.title.take(30))
+        val clickedByText = accessibilityService.clickNodeByText(bestCandidate.title.take(30))
+
+        if (!clickedByText) {
+            val tapPoint = if (bestCandidate.checkpointX != null && bestCandidate.checkpointY != null) {
+                Point2D(bestCandidate.checkpointX, bestCandidate.checkpointY)
+            } else {
+                val resolver = ScreenTargetResolver()
+                resolver.findProductCardCheckpoint(
+                    title = bestCandidate.title,
+                    priceText = bestCandidate.effectivePrice?.let { formatVnd(it) },
+                    ocrBlocks = lastOcrBlocks
+                )
+            }
+
+            if (tapPoint != null) {
+                Log.d(TAG, "Falling back to coordinate tap at (${tapPoint.x}, ${tapPoint.y})")
+                val tapSuccess = accessibilityService.tapAt(tapPoint.x, tapPoint.y)
+                Log.d(TAG, "Coordinate tap result: $tapSuccess")
+            }
+        }
         delay(2500)
 
         // 6. Verify final screen (Section 10)
-        val finalObs = observationEngine.observeScreen(captureVisual = false).observation
+        val finalObsResult = obsEngine.observeScreen(captureVisual = false, forceOcr = true)
+        val finalObs = finalObsResult.observation
         val finalPackage = finalObs.currentPackage ?: accessibilityService.getActivePackageName()
         val finalHierarchy = finalObs.nodeHierarchyText ?: ""
+        val finalOcr = finalObs.ocrText ?: ""
+        val combinedEvidence = "$finalHierarchy\n$finalOcr"
 
         val isShopeeForeground = finalPackage == SHOPEE_PACKAGE
-        val isDetailPage = finalHierarchy.contains("Mua ngay") ||
-                finalHierarchy.contains("Thêm vào giỏ") ||
-                finalHierarchy.contains("Chi tiết sản phẩm") ||
-                finalHierarchy.contains(bestCandidate.title.take(15))
+        val hasDetailPageIndicators = combinedEvidence.contains("Mua ngay", ignoreCase = true) ||
+                combinedEvidence.contains("Thêm vào giỏ", ignoreCase = true) ||
+                combinedEvidence.contains("Chi tiết sản phẩm", ignoreCase = true) ||
+                combinedEvidence.contains("Mua với voucher", ignoreCase = true) ||
+                combinedEvidence.contains(bestCandidate.title.take(15), ignoreCase = true)
 
-        if (isShopeeForeground && (isDetailPage || clicked)) {
+        val isVerifiedDetailPage = isShopeeForeground && hasDetailPageIndicators
+
+        if (isVerifiedDetailPage) {
             val priceStr = bestCandidate.effectivePrice?.let { formatVnd(it) } ?: "chưa rõ"
             val ratingStr = bestCandidate.rating?.let { "★ $it" } ?: ""
             val summary = "Mình đã mở sản phẩm phù hợp nhất trong các sản phẩm đã xem: ${bestCandidate.title}. Giá $priceStr $ratingStr. Bạn có thể xem chi tiết trên màn hình."
@@ -167,7 +225,7 @@ class ShopeeShoppingSkill(
                 summaryVi = summary
             )
         } else {
-            val msg = "Không thể xác nhận đã mở trang chi tiết sản phẩm thành công."
+            val msg = "Không thể xác nhận đã mở trang chi tiết sản phẩm trên Shopee."
             callback?.onCompleted(false, msg)
             return ShoppingResult(
                 outcome = TaskOutcome.FAILED,
@@ -180,6 +238,7 @@ class ShopeeShoppingSkill(
 
     /**
      * Parses product cards from Shopee's accessibility node dump.
+     * Does NOT fabricate default ratings or reviews.
      */
     fun extractProductCandidates(nodeDump: String): List<ProductCandidate> {
         val candidates = mutableListOf<ProductCandidate>()
@@ -188,7 +247,9 @@ class ShopeeShoppingSkill(
         var currentTitle: String? = null
         var currentPrice: Long? = null
         var currentRating: Float? = null
-        var currentReviews: Int? = null
+        var currentSales: Int? = null
+        var currentCenterX: Float? = null
+        var currentCenterY: Float? = null
         var isMall = false
         var isPreferred = false
 
@@ -196,6 +257,10 @@ class ShopeeShoppingSkill(
             val textMatch = Regex("text=\"([^\"]+)\"").find(line)
             val descMatch = Regex("desc=\"([^\"]+)\"").find(line)
             val content = textMatch?.groupValues?.get(1) ?: descMatch?.groupValues?.get(1) ?: continue
+
+            val centerMatch = Regex("center=\\(([0-9.]+),([0-9.]+)\\)").find(line)
+            val lineCenterX = centerMatch?.groupValues?.get(1)?.toFloatOrNull()
+            val lineCenterY = centerMatch?.groupValues?.get(2)?.toFloatOrNull()
 
             val lower = content.lowercase()
             if (lower == "mall") {
@@ -219,11 +284,11 @@ class ShopeeShoppingSkill(
                 currentRating = ratingMatch.groupValues[1].toFloatOrNull()
             }
 
-            // Sales/reviews: "Đã bán 1,2k", "Đã bán 500"
+            // Sales count: "Đã bán 1,2k", "Đã bán 500"
             val salesMatch = Regex("Đã bán\\s+([0-9.,]+k?)", RegexOption.IGNORE_CASE).find(content)
             if (salesMatch != null) {
                 val rawSales = salesMatch.groupValues[1]
-                currentReviews = parseSalesCount(rawSales)
+                currentSales = parseSalesCount(rawSales)
             }
 
             // Title: longer descriptive text (> 15 chars), not a UI label or price
@@ -236,20 +301,26 @@ class ShopeeShoppingSkill(
                         ProductCandidate(
                             title = currentTitle,
                             price = currentPrice,
-                            rating = currentRating ?: 4.8f,
-                            reviewCount = currentReviews ?: 100,
+                            rating = currentRating,
+                            reviewCount = null,
+                            salesCount = currentSales,
+                            checkpointX = currentCenterX,
+                            checkpointY = currentCenterY,
                             isMall = isMall,
-                            isPreferred = isPreferred
+                            isPreferred = isPreferred,
+                            source = "accessibility"
                         )
                     )
                     // Reset
                     currentPrice = null
                     currentRating = null
-                    currentReviews = null
+                    currentSales = null
                     isMall = false
                     isPreferred = false
                 }
                 currentTitle = content
+                currentCenterX = lineCenterX
+                currentCenterY = lineCenterY
             }
         }
 
@@ -259,12 +330,133 @@ class ShopeeShoppingSkill(
                 ProductCandidate(
                     title = currentTitle,
                     price = currentPrice,
-                    rating = currentRating ?: 4.8f,
-                    reviewCount = currentReviews ?: 100,
+                    rating = currentRating,
+                    reviewCount = null,
+                    salesCount = currentSales,
+                    checkpointX = currentCenterX,
+                    checkpointY = currentCenterY,
                     isMall = isMall,
-                    isPreferred = isPreferred
+                    isPreferred = isPreferred,
+                    source = "accessibility"
                 )
             )
+        }
+
+        return candidates
+    }
+
+    /**
+     * Extracts product candidates directly from ML Kit OCR blocks.
+     * Groups titles, prices, ratings, and sales volume by spatial proximity.
+     */
+    fun extractCandidatesFromOcr(ocrBlocks: List<OcrBlock>): List<ProductCandidate> {
+        if (ocrBlocks.isEmpty()) return emptyList()
+
+        val candidates = mutableListOf<ProductCandidate>()
+        val excludedKeywords = setOf(
+            "shopee", "tim kiem", "pho bien", "moi nhat", "ban chay",
+            "bo loc", "goi y", "thong bao", "tin nhan", "toi", "trang chu", "live", "video",
+            "them vao gio", "mua ngay", "shop xu huong"
+        )
+
+        val titleBlocks = mutableListOf<OcrBlock>()
+        val priceBlocks = mutableListOf<Pair<OcrBlock, Long>>()
+        val salesBlocks = mutableListOf<Pair<OcrBlock, Int>>()
+        val ratingBlocks = mutableListOf<Pair<OcrBlock, Float>>()
+        val mallBlocks = mutableListOf<OcrBlock>()
+        val preferredBlocks = mutableListOf<OcrBlock>()
+
+        for (block in ocrBlocks) {
+            val text = block.text.trim()
+            val textLower = text.lowercase()
+            val normText = TextNormalizer.removeAccents(textLower)
+
+            if (block.top > 0 && block.top < 80) continue // Skip status bar area
+
+            if (textLower == "mall") {
+                mallBlocks.add(block)
+                continue
+            }
+            if (normText.contains("yeu thich")) {
+                preferredBlocks.add(block)
+                continue
+            }
+
+            val price = extractPriceFromText(text)
+            if (price != null) {
+                priceBlocks.add(block to price)
+                continue
+            }
+
+            val salesMatch = Regex("Đã bán\\s+([0-9.,]+k?)", RegexOption.IGNORE_CASE).find(text)
+            if (salesMatch != null) {
+                val count = parseSalesCount(salesMatch.groupValues[1])
+                salesBlocks.add(block to count)
+                continue
+            }
+
+            val ratingMatch = Regex("\\b([345]\\.[0-9])\\b").find(text)
+            if (ratingMatch != null && text.length <= 5) {
+                val r = ratingMatch.groupValues[1].toFloatOrNull()
+                if (r != null) {
+                    ratingBlocks.add(block to r)
+                    continue
+                }
+            }
+
+            val isExcluded = normText == "gia" || normText == "loc" || normText == "bo loc" ||
+                    excludedKeywords.any { normText.contains(it) }
+            if (text.length >= 12 && !isExcluded && !text.startsWith("Đã bán") && !text.startsWith("₫")) {
+                titleBlocks.add(block)
+            }
+        }
+
+        for (titleBlock in titleBlocks) {
+            // Find price block vertically below (within 350px) and horizontally aligned (within 300px)
+            val matchingPrice = priceBlocks.filter { (pBlock, _) ->
+                pBlock.top >= titleBlock.top - 40 &&
+                        pBlock.top <= titleBlock.bottom + 350 &&
+                        kotlin.math.abs(pBlock.centerX - titleBlock.centerX) < 300
+            }.minByOrNull { (pBlock, _) ->
+                kotlin.math.abs(pBlock.top - titleBlock.bottom)
+            }
+
+            if (matchingPrice != null) {
+                val priceVal = matchingPrice.second
+                val salesVal = salesBlocks.firstOrNull { (sBlock, _) ->
+                    kotlin.math.abs(sBlock.centerY - matchingPrice.first.centerY) < 150 &&
+                            kotlin.math.abs(sBlock.centerX - titleBlock.centerX) < 300
+                }?.second
+
+                val ratingVal = ratingBlocks.firstOrNull { (rBlock, _) ->
+                    kotlin.math.abs(rBlock.centerY - matchingPrice.first.centerY) < 150 &&
+                            kotlin.math.abs(rBlock.centerX - titleBlock.centerX) < 300
+                }?.second
+
+                val isMall = mallBlocks.any { mBlock ->
+                    kotlin.math.abs(mBlock.centerY - titleBlock.centerY) < 120 &&
+                            kotlin.math.abs(mBlock.centerX - titleBlock.centerX) < 200
+                }
+                val isPreferred = preferredBlocks.any { pfBlock ->
+                    kotlin.math.abs(pfBlock.centerY - titleBlock.centerY) < 120 &&
+                            kotlin.math.abs(pfBlock.centerX - titleBlock.centerX) < 200
+                }
+
+                candidates.add(
+                    ProductCandidate(
+                        title = titleBlock.text.trim(),
+                        price = priceVal,
+                        rating = ratingVal,
+                        reviewCount = null,
+                        salesCount = salesVal,
+                        checkpointX = titleBlock.centerX,
+                        checkpointY = titleBlock.centerY,
+                        isMall = isMall,
+                        isPreferred = isPreferred,
+                        source = "ocr"
+                    )
+                )
+            }
         }
 
         return candidates
@@ -293,8 +485,8 @@ class ShopeeShoppingSkill(
     }
 
     private fun isSameProduct(title1: String, title2: String): Boolean {
-        val t1 = title1.take(25).lowercase()
-        val t2 = title2.take(25).lowercase()
+        val t1 = TextNormalizer.removeAccents(title1.take(25).lowercase()).trim()
+        val t2 = TextNormalizer.removeAccents(title2.take(25).lowercase()).trim()
         return t1 == t2
     }
 

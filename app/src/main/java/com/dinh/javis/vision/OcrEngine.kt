@@ -11,9 +11,13 @@ import kotlin.coroutines.resume
 
 data class OcrBlock(
     val text: String,
-    val boundingBox: Rect,
-    val centerX: Float = boundingBox.centerX().toFloat(),
-    val centerY: Float = boundingBox.centerY().toFloat()
+    val boundingBox: Rect = Rect(),
+    val centerX: Float = (boundingBox.left + boundingBox.right) / 2f,
+    val centerY: Float = (boundingBox.top + boundingBox.bottom) / 2f,
+    val top: Float = boundingBox.top.toFloat(),
+    val bottom: Float = boundingBox.bottom.toFloat(),
+    val left: Float = boundingBox.left.toFloat(),
+    val right: Float = boundingBox.right.toFloat()
 )
 
 data class OcrResult(
@@ -22,8 +26,8 @@ data class OcrResult(
 )
 
 /**
- * Bộ nhận diện chữ trên màn hình On-Device bằng Google ML Kit Text Recognition
- * Chạy 100% cục bộ, tốc độ ~40-90ms, độ trễ thấp và không tốn phí token AI.
+ * On-device screen text recognition engine powered by Google ML Kit Text Recognition.
+ * Runs 100% locally with ~40-90ms latency, zero network cost, and zero AI token overhead.
  */
 class OcrEngine {
 
@@ -37,7 +41,22 @@ class OcrEngine {
                     val blocks = mutableListOf<OcrBlock>()
                     for (block in visionText.textBlocks) {
                         val rect = block.boundingBox ?: Rect()
-                        blocks.add(OcrBlock(text = block.text, boundingBox = rect))
+                        val bTop = rect.top.toFloat()
+                        val bBottom = rect.bottom.toFloat()
+                        val bLeft = rect.left.toFloat()
+                        val bRight = rect.right.toFloat()
+                        blocks.add(
+                            OcrBlock(
+                                text = block.text,
+                                boundingBox = rect,
+                                centerX = (bLeft + bRight) / 2f,
+                                centerY = (bTop + bBottom) / 2f,
+                                top = bTop,
+                                bottom = bBottom,
+                                left = bLeft,
+                                right = bRight
+                            )
+                        )
                     }
                     continuation.resume(OcrResult(fullText = visionText.text, blocks = blocks))
                 }

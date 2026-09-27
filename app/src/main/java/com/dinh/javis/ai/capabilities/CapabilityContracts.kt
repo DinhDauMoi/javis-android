@@ -2,6 +2,7 @@ package com.dinh.javis.ai.capabilities
 
 import android.graphics.Bitmap
 import android.graphics.RectF
+import com.dinh.javis.vision.OcrBlock
 
 data class ChatMessage(
     val role: String, // system, user, assistant
@@ -48,7 +49,8 @@ data class ScreenObservation(
     val ocrText: String? = null,
     val screenshotWidth: Int = 0,
     val screenshotHeight: Int = 0,
-    val currentPackage: String? = null
+    val currentPackage: String? = null,
+    val ocrBlocks: List<OcrBlock> = emptyList()
 )
 
 data class ActionSummary(
