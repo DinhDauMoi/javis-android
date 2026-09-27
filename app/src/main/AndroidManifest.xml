@@ -68,6 +68,12 @@
             android:exported="false"
             android:parentActivityName=".MainActivity" />
 
+        <!-- Hộp thoại xác nhận tương tác người dùng (BA-01) -->
+        <activity
+            android:name=".agent.ConfirmationDialogActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.Dialog.Alert" />
+
         <!-- Dịch vụ Trợ năng AccessibilityService (Điều khiển app khác, cuộn, click) -->
         <service
             android:name=".service.JavisAccessibilityService"

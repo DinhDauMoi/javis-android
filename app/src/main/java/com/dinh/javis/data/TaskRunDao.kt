@@ -21,4 +21,11 @@ interface TaskRunDao {
 
     @Query("DELETE FROM task_runs WHERE startTime < :cutoffTimestamp")
     suspend fun purgeOlderThan(cutoffTimestamp: Long)
+
+    /**
+     * BA-04: On process restart, mark any still-RUNNING tasks as INTERRUPTED.
+     * Prevents stale RUNNING records and blocks automatic replay of unfinished actions.
+     */
+    @Query("UPDATE task_runs SET status = 'INTERRUPTED', endTime = :nowTimestamp WHERE status = 'RUNNING'")
+    suspend fun markStaleRunsAsInterrupted(nowTimestamp: Long)
 }
