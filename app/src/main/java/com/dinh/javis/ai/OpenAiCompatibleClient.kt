@@ -36,7 +36,13 @@ class OpenAiCompatibleClient(
         .build()
 
     private fun sanitizeInput(input: String): String {
-        return input.trim().replace("\\", "").replace("\r", "").replace("\n", "")
+        return input.trim()
+            .replace("\\", "")
+            .replace("\r", "")
+            .replace("\n", "")
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
+            .trim()
     }
 
     fun updateConfig(
@@ -362,12 +368,25 @@ class OpenAiCompatibleClient(
             .post(requestBody)
 
         val cleanKey = sanitizeInput(apiKey)
+        val maskedKey = if (cleanKey.length > 6) "...${cleanKey.takeLast(4)}" else "***"
         if (cleanKey.isNotBlank()) {
             requestBuilder.header("Authorization", "Bearer $cleanKey")
         }
 
+        val payloadStr = payload.toString()
+        val truncatedPayload = if (payloadStr.length > 1500) payloadStr.take(1500) + "... [truncated]" else payloadStr
+        Log.i("JAVIS_TEST", "=== API REQUEST ===")
+        Log.i("JAVIS_TEST", "URL: $endpoint")
+        Log.i("JAVIS_TEST", "Auth Header: Bearer $maskedKey (Key Length: ${cleanKey.length})")
+        Log.i("JAVIS_TEST", "Payload: $truncatedPayload")
+
+        val startTime = System.currentTimeMillis()
         client.newCall(requestBuilder.build()).execute().use { response ->
+            val latency = System.currentTimeMillis() - startTime
             val bodyString = response.body?.string() ?: ""
+            Log.i("JAVIS_TEST", "=== API RESPONSE [HTTP ${response.code}] (${latency}ms) ===")
+            Log.i("JAVIS_TEST", "Response Body: $bodyString")
+
             if (!response.isSuccessful) {
                 val detail = extractErrorMessage(bodyString)
                 val errorMsg = when (response.code) {
@@ -467,14 +486,16 @@ class OpenAiCompatibleClient(
                 requestBuilder.header("Authorization", "Bearer $cleanKey")
             }
 
-            Log.i("JAVIS_TEST", "Sending HTTP POST -> $endpoint")
-            Log.i("JAVIS_TEST", "Model: $finalModel | Auth Header: Bearer $maskedKey")
+            Log.i("JAVIS_TEST", "=== TEST CONNECTION API REQUEST ===")
+            Log.i("JAVIS_TEST", "URL: $endpoint")
+            Log.i("JAVIS_TEST", "Auth Header: Bearer $maskedKey (Key Length: ${cleanKey.length})")
+            Log.i("JAVIS_TEST", "Payload: ${jsonPayload.toString()}")
 
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val latency = System.currentTimeMillis() - startTime
                 val bodyString = response.body?.string() ?: ""
-                Log.i("JAVIS_TEST", "HTTP Response Code: ${response.code} | Latency: ${latency}ms")
-                Log.i("JAVIS_TEST", "HTTP Response Body: $bodyString")
+                Log.i("JAVIS_TEST", "=== TEST CONNECTION RESPONSE [HTTP ${response.code}] (${latency}ms) ===")
+                Log.i("JAVIS_TEST", "Response Body: $bodyString")
 
                 if (response.isSuccessful) {
                     Result.success(Pair(latency, "Kết nối thành công! Độ trễ: ${latency}ms (Mô hình: $finalModel)"))
