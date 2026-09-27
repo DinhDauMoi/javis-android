@@ -393,7 +393,7 @@ class OpenAiCompatibleClient(
             val isGenroStore = endpoint.contains("gateway.genrostore.com")
             val is401 = e.message?.contains("401") == true || e.message?.contains("No active credentials") == true
             if (isGenroStore && is401) {
-                // Fallback 1: Try direct Mistral AI endpoint with user key
+                // Fallback 1: Direct Mistral AI endpoint with user API key
                 if (apiKey.isNotBlank()) {
                     try {
                         val mistralEndpoint = "https://api.mistral.ai/v1/chat/completions"
@@ -407,7 +407,7 @@ class OpenAiCompatibleClient(
                         // Fallback 1 failed, proceed to Fallback 2
                     }
                 }
-                // Fallback 2: Try GenroStore Gateway public pool without Auth header
+                // Fallback 2: GenroStore Gateway public pool without Auth header
                 try {
                     return performSingleExecution(endpoint, payload, includeAuth = false)
                 } catch (_: Exception) {
