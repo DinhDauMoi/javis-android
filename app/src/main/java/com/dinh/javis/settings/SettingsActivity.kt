@@ -170,6 +170,15 @@ class SettingsActivity : AppCompatActivity() {
             // Auto-persist new key typed in etApiKey if non-empty
             if (keyInput.isNotBlank()) {
                 preferenceManager.openAiApiKey = keyInput
+                lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val activeProfile = database.aiModelProfileDao().getActiveProfile()
+                        if (activeProfile != null) {
+                            val alias = activeProfile.secretKeyAlias.ifBlank { "default_key_alias" }
+                            com.dinh.javis.security.KeystoreManager(this@SettingsActivity).encrypt(alias, keyInput)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
             val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
 
