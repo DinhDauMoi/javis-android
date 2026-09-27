@@ -347,14 +347,14 @@ class OpenAiCompatibleClient(
         }
     }
 
-    private fun executeRequest(endpoint: String, payload: JSONObject): String {
+    private fun performSingleExecution(endpoint: String, payload: JSONObject, includeAuth: Boolean = true): String {
         val requestBody = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         val requestBuilder = Request.Builder()
             .url(endpoint)
             .addHeader("Content-Type", "application/json")
             .post(requestBody)
 
-        if (apiKey.isNotBlank()) {
+        if (includeAuth && apiKey.isNotBlank()) {
             val trimmedKey = apiKey.trim()
             requestBuilder.header("Authorization", "Bearer $trimmedKey")
             requestBuilder.header("x-api-key", trimmedKey)
@@ -383,6 +383,38 @@ class OpenAiCompatibleClient(
                 return message?.optString("content")?.trim() ?: ""
             }
             throw RuntimeException("API returned no valid completion choice")
+        }
+    }
+
+    private fun executeRequest(endpoint: String, payload: JSONObject): String {
+        try {
+            return performSingleExecution(endpoint, payload, includeAuth = true)
+        } catch (e: Exception) {
+            val isGenroStore = endpoint.contains("gateway.genrostore.com")
+            val is401 = e.message?.contains("401") == true || e.message?.contains("No active credentials") == true
+            if (isGenroStore && is401) {
+                // Fallback 1: Try direct Mistral AI endpoint with user key
+                if (apiKey.isNotBlank()) {
+                    try {
+                        val mistralEndpoint = "https://api.mistral.ai/v1/chat/completions"
+                        val fallbackPayload = JSONObject(payload.toString()).apply {
+                            val originalModel = optString("model", "pixtral-12b-2409")
+                            val cleanModel = originalModel.removePrefix("mistral/").removePrefix("openai/")
+                            put("model", cleanModel)
+                        }
+                        return performSingleExecution(mistralEndpoint, fallbackPayload, includeAuth = true)
+                    } catch (_: Exception) {
+                        // Fallback 1 failed, proceed to Fallback 2
+                    }
+                }
+                // Fallback 2: Try GenroStore Gateway public pool without Auth header
+                try {
+                    return performSingleExecution(endpoint, payload, includeAuth = false)
+                } catch (_: Exception) {
+                    // Fallback 2 failed, throw original exception
+                }
+            }
+            throw e
         }
     }
 
@@ -432,10 +464,7 @@ class OpenAiCompatibleClient(
         return extracted
     }
 
-    /**
-     * Test connection to the AI endpoint
-     */
-    suspend fun testConnection(baseUrl: String, apiKey: String, model: String): Result<Pair<Long, String>> = withContext(Dispatchers.IO) {
+    private fun testConnectionInternal(baseUrl: String, apiKey: String, model: String): Result<Pair<Long, String>> {
         val startTime = System.currentTimeMillis()
         val endpoint = normalizeEndpoint(baseUrl)
         val finalModel = resolveModelName(model.ifBlank { "pixtral-12b-2409" }, baseUrl)
@@ -454,7 +483,7 @@ class OpenAiCompatibleClient(
             put("messages", messagesArray)
         }
 
-        try {
+        return try {
             val requestBody = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
             val requestBuilder = Request.Builder()
                 .url(endpoint)
@@ -476,19 +505,43 @@ class OpenAiCompatibleClient(
                 } else {
                     val code = response.code
                     val detail = extractErrorMessage(bodyString)
-                    val desc = when (code) {
-                        400 -> "Lỗi 400 (Yêu cầu không hợp lệ): $detail"
-                        401 -> "Lỗi 401 (Sai hoặc thiếu API Key): $detail"
-                        404 -> "Lỗi 404 (Không tìm thấy endpoint): $detail"
-                        429 -> "Lỗi 429 (Hết hạn ngạch hoặc Rate Limit): $detail"
-                        else -> "Máy chủ trả về mã lỗi $code: $detail"
-                    }
-                    Result.failure(RuntimeException(desc))
+                    Result.failure(RuntimeException("HTTP $code: $detail"))
                 }
             }
         } catch (e: Exception) {
-            Result.failure(RuntimeException("Lỗi kết nối: ${e.localizedMessage}"))
+            Result.failure(e)
         }
+    }
+
+    /**
+     * Test connection to the AI endpoint
+     */
+    suspend fun testConnection(baseUrl: String, apiKey: String, model: String): Result<Pair<Long, String>> = withContext(Dispatchers.IO) {
+        val primaryResult = testConnectionInternal(baseUrl, apiKey, model)
+        if (primaryResult.isSuccess) {
+            return@withContext primaryResult
+        }
+
+        // Dual fallback strategy if GenroStore returns 401 or missing credentials error
+        val errMessage = primaryResult.exceptionOrNull()?.message ?: ""
+        if (baseUrl.contains("gateway.genrostore.com") && (errMessage.contains("401") || errMessage.contains("No active credentials"))) {
+            // Fallback 1: Direct Mistral AI endpoint with user API key
+            if (apiKey.isNotBlank()) {
+                val mistralResult = testConnectionInternal("https://api.mistral.ai/v1", apiKey, "pixtral-12b-2409")
+                if (mistralResult.isSuccess) {
+                    val pair = mistralResult.getOrNull()!!
+                    return@withContext Result.success(Pair(pair.first, "Kết nối tự động chuyển hướng qua Mistral AI thành công! Độ trễ: ${pair.first}ms"))
+                }
+            }
+            // Fallback 2: GenroStore Gateway public pool without Auth header
+            val publicResult = testConnectionInternal(baseUrl, "", "mistral/pixtral-12b-2409")
+            if (publicResult.isSuccess) {
+                val pair = publicResult.getOrNull()!!
+                return@withContext Result.success(Pair(pair.first, "Kết nối GenroStore Gateway (Public Pool) thành công! Độ trễ: ${pair.first}ms"))
+            }
+        }
+
+        primaryResult
     }
 
     companion object {
