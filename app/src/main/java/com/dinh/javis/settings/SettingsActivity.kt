@@ -170,8 +170,20 @@ class SettingsActivity : AppCompatActivity() {
             // Auto-persist new key typed in etApiKey if non-empty
             if (keyInput.isNotBlank()) {
                 preferenceManager.openAiApiKey = keyInput
+                lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val activeProfile = database.aiModelProfileDao().getActiveProfile()
+                        if (activeProfile != null) {
+                            val alias = activeProfile.secretKeyAlias.ifBlank { "default_key_alias" }
+                            com.dinh.javis.security.KeystoreManager(this@SettingsActivity).encrypt(alias, keyInput)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
             val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
+
+            android.util.Log.i("JAVIS_TEST", "=== BUTTON TEST AI CONNECTION CLICKED ===")
+            android.util.Log.i("JAVIS_TEST", "URL: $url | Model: $model | Key Length: ${key.length}")
 
             val keyNotice = if (key.isNotBlank()) {
                 val maskedKey = if (key.length > 6) "...${key.takeLast(4)}" else "***"
@@ -195,9 +207,11 @@ class SettingsActivity : AppCompatActivity() {
                 updateApiKeyHelperNote()
 
                 testResult.onSuccess { pair ->
+                    android.util.Log.i("JAVIS_TEST", "Test Result SUCCESS: ${pair.second}")
                     binding.tvConnectionResult.text = "$keyNotice\n✅ ${pair.second}"
                     binding.tvConnectionResult.setTextColor(getColor(R.color.status_green))
                 }.onFailure { err ->
+                    android.util.Log.e("JAVIS_TEST", "Test Result FAILURE: ${err.message}", err)
                     binding.tvConnectionResult.text = "$keyNotice\n❌ ${err.message}"
                     binding.tvConnectionResult.setTextColor(getColor(android.R.color.holo_red_light))
                 }
