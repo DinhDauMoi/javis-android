@@ -186,12 +186,14 @@ class Speaker(private val context: Context) : TextToSpeech.OnInitListener {
      * Phát âm thanh đọc phản hồi bằng tiếng Việt.
      * Tự động pause micro trước khi nói và resume sau khi nói xong.
      * Chỉ dùng cho thông báo lỗi, câu hỏi thời gian hoặc câu trả lời AI.
+     * Tự động lọc sạch ký hiệu Markdown (**, *, #, ```, ``, v.v.) để TTS đọc giọng nói tự nhiên.
      *
      * @param text  Văn bản cần đọc
      * @param onDone Callback khi đọc xong (tuỳ chọn)
      */
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        if (text.isBlank()) {
+        val cleanSpokenText = com.dinh.javis.utils.TextNormalizer.stripMarkdownForSpeech(text)
+        if (cleanSpokenText.isBlank()) {
             onDone?.invoke()
             return
         }
@@ -201,12 +203,12 @@ class Speaker(private val context: Context) : TextToSpeech.OnInitListener {
         onSpeechStarted?.invoke()
 
         if (!isInitialized) {
-            pendingSpeech = text
+            pendingSpeech = cleanSpokenText
             pendingOnDone = onDone
             return
         }
 
-        speakInternal(text, onDone)
+        speakInternal(cleanSpokenText, onDone)
     }
 
     private fun speakInternal(text: String, onDone: (() -> Unit)?) {
