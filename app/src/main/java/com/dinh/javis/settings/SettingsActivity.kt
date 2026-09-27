@@ -133,15 +133,18 @@ class SettingsActivity : AppCompatActivity() {
             val finalModel = if (model.isNotEmpty()) model else "gpt-4o-mini"
 
             preferenceManager.openAiBaseUrl = finalUrl
-            preferenceManager.openAiApiKey = key
             preferenceManager.openAiModel = finalModel
+            if (key.isNotBlank()) {
+                preferenceManager.openAiApiKey = key
+            }
+            val activeKey = key.ifBlank { preferenceManager.openAiApiKey }
 
             lifecycleScope.launch {
                 val activeProfile = database.aiModelProfileDao().getActiveProfile()
                 if (activeProfile != null) {
                     val alias = activeProfile.secretKeyAlias.ifBlank { "default_key_alias" }
-                    if (key.isNotBlank()) {
-                        com.dinh.javis.security.KeystoreManager(this@SettingsActivity).encrypt(alias, key)
+                    if (activeKey.isNotBlank()) {
+                        com.dinh.javis.security.KeystoreManager(this@SettingsActivity).encrypt(alias, activeKey)
                     }
                     val updatedProfile = activeProfile.copy(
                         baseUrl = finalUrl,
@@ -162,8 +165,13 @@ class SettingsActivity : AppCompatActivity() {
             val modelInput = binding.etModelName.text?.toString()?.trim() ?: ""
 
             val url = urlInput.ifBlank { preferenceManager.openAiBaseUrl }
-            val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
             val model = modelInput.ifBlank { preferenceManager.openAiModel }
+
+            // Auto-persist new key typed in etApiKey if non-empty
+            if (keyInput.isNotBlank()) {
+                preferenceManager.openAiApiKey = keyInput
+            }
+            val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
 
             val keyNotice = if (key.isNotBlank()) {
                 val maskedKey = if (key.length > 6) "...${key.takeLast(4)}" else "***"
@@ -184,6 +192,7 @@ class SettingsActivity : AppCompatActivity() {
 
                 binding.btnTestAiConnection.isEnabled = true
                 binding.btnTestAiConnection.text = "⚡ KIỂM TRA KẾT NỐI AI"
+                updateApiKeyHelperNote()
 
                 testResult.onSuccess { pair ->
                     binding.tvConnectionResult.text = "$keyNotice\n✅ ${pair.second}"
