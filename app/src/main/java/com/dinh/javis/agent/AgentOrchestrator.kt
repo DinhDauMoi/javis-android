@@ -492,7 +492,7 @@ class AgentOrchestrator(private val context: Context) {
             budget = TaskBudget(
                 maxSteps = request.executionLimits.maxSearchResultPages * 4,
                 deadlineMs = 120_000L,
-                maxModelCalls = 0
+                maxModelCalls = request.executionLimits.maxModelCalls.coerceAtLeast(5)
             )
         )
         val runContext = RunContext(
@@ -532,7 +532,9 @@ class AgentOrchestrator(private val context: Context) {
 
                 val skill = com.dinh.javis.agent.shopping.ShopeeShoppingSkill(
                     context = context,
-                    observationEngine = observationEngine
+                    observationEngine = observationEngine,
+                    modelRouter = modelRouter,
+                    policyGuard = policyGuard
                 )
 
                 val result = skill.execute(

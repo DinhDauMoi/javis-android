@@ -260,6 +260,14 @@ class OpenAiCompatibleClient(
                 append(screenSummary.ocrText).append("\n\n")
             }
 
+            if (screenSummary.ocrBlocks.isNotEmpty()) {
+                append("[OCR Blocks with Coordinates]:\n")
+                for (block in screenSummary.ocrBlocks.take(30)) {
+                    append("- \"${block.text}\" center: (${block.centerX}, ${block.centerY}), rect: [${block.left}, ${block.top}, ${block.right}, ${block.bottom}]\n")
+                }
+                append("\n")
+            }
+
             if (history.isNotEmpty()) {
                 append("[Execution History]:\n")
                 for (step in history) {

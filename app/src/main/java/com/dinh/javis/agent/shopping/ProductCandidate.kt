@@ -25,7 +25,8 @@ data class ProductCandidate(
     val observedAtMs: Long = System.currentTimeMillis(),
     val source: String = "accessibility",
     val extractionConfidence: Float = 1.0f,
-    val missingFields: List<String> = emptyList()
+    val missingFields: List<String> = emptyList(),
+    val pageIndex: Int = 1
 ) {
     /**
      * Resolves the effective payable price.

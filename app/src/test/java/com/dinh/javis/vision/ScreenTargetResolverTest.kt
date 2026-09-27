@@ -102,6 +102,32 @@ class ScreenTargetResolverTest {
     }
 
     @Test
+    fun findProductCardCheckpoint_nonUniquePrice_rejectsFallback() {
+        val blocks = listOf(
+            OcrBlock(
+                text = "150.000 đ",
+                boundingBox = Rect(50, 800, 250, 880),
+                centerX = 150f,
+                centerY = 840f
+            ),
+            OcrBlock(
+                text = "150.000 đ",
+                boundingBox = Rect(550, 800, 750, 880),
+                centerX = 650f,
+                centerY = 840f
+            )
+        )
+
+        val target = resolver.findProductCardCheckpoint(
+            title = "San pham khong co trong OCR",
+            priceText = "150.000 đ",
+            ocrBlocks = blocks
+        )
+
+        assertNull("Non-unique price match must be rejected to prevent mis-clicks", target)
+    }
+
+    @Test
     fun resolveNodeBoundsCheckpoint_emptyRect_returnsNull() {
         val emptyRect = Rect().apply { left = 0; top = 0; right = 0; bottom = 0 }
         val target = resolver.resolveNodeBoundsCheckpoint(emptyRect)

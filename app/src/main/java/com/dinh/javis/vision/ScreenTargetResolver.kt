@@ -93,10 +93,19 @@ class ScreenTargetResolver(
         val titlePoint = findTargetFromOcr(title, ocrBlocks, imageWidth, imageHeight)
         if (titlePoint != null) return titlePoint
 
-        // Fallback to price block if unique
+        // Fallback to price block ONLY if unique (matches exactly 1 OCR block)
         if (!priceText.isNullOrBlank()) {
-            val pricePoint = findTargetFromOcr(priceText, ocrBlocks, imageWidth, imageHeight)
-            if (pricePoint != null) return pricePoint
+            val normPrice = TextNormalizer.removeAccents(priceText.lowercase()).replace(" ", "")
+            val matchingBlocksCount = ocrBlocks.count { block ->
+                val normBlock = TextNormalizer.removeAccents(block.text.lowercase()).replace(" ", "")
+                normBlock.contains(normPrice)
+            }
+            if (matchingBlocksCount == 1) {
+                val pricePoint = findTargetFromOcr(priceText, ocrBlocks, imageWidth, imageHeight)
+                if (pricePoint != null) return pricePoint
+            } else {
+                Log.w(TAG, "Price text \"$priceText\" matched $matchingBlocksCount OCR blocks (non-unique); rejecting price fallback.")
+            }
         }
 
         return null
