@@ -355,7 +355,8 @@ class OpenAiCompatibleClient(
     }
 
     private fun executeRequest(endpoint: String, payload: JSONObject): String {
-        val requestBody = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val rawJson = payload.toString().replace("\\/", "/")
+        val requestBody = rawJson.toRequestBody("application/json; charset=utf-8".toMediaType())
         val requestBuilder = Request.Builder()
             .url(endpoint)
             .addHeader("Content-Type", "application/json")
@@ -366,6 +367,16 @@ class OpenAiCompatibleClient(
             requestBuilder.header("Authorization", "Bearer $cleanKey")
         }
 
+<<<<<<< feature/genrostore-key-sync
+=======
+        val truncatedPayload = if (rawJson.length > 1500) rawJson.take(1500) + "... [truncated]" else rawJson
+        Log.i("JAVIS_TEST", "=== API REQUEST ===")
+        Log.i("JAVIS_TEST", "URL: $endpoint")
+        Log.i("JAVIS_TEST", "Auth Header: Bearer $maskedKey (Key Length: ${cleanKey.length})")
+        Log.i("JAVIS_TEST", "Payload: $truncatedPayload")
+
+        val startTime = System.currentTimeMillis()
+>>>>>>> local
         client.newCall(requestBuilder.build()).execute().use { response ->
             val bodyString = response.body?.string() ?: ""
             if (!response.isSuccessful) {
@@ -455,7 +466,8 @@ class OpenAiCompatibleClient(
         }
 
         try {
-            val requestBody = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val rawJson = jsonPayload.toString().replace("\\/", "/")
+            val requestBody = rawJson.toRequestBody("application/json; charset=utf-8".toMediaType())
             val requestBuilder = Request.Builder()
                 .url(endpoint)
                 .addHeader("Content-Type", "application/json")
@@ -466,6 +478,14 @@ class OpenAiCompatibleClient(
                 requestBuilder.header("Authorization", "Bearer $cleanKey")
             }
 
+<<<<<<< feature/genrostore-key-sync
+=======
+            Log.i("JAVIS_TEST", "=== TEST CONNECTION API REQUEST ===")
+            Log.i("JAVIS_TEST", "URL: $endpoint")
+            Log.i("JAVIS_TEST", "Auth Header: Bearer $maskedKey (Key Length: ${cleanKey.length})")
+            Log.i("JAVIS_TEST", "Payload: $rawJson")
+
+>>>>>>> local
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val latency = System.currentTimeMillis() - startTime
                 val bodyString = response.body?.string() ?: ""
