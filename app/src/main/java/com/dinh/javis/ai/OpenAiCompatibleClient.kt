@@ -35,6 +35,10 @@ class OpenAiCompatibleClient(
         .writeTimeout(25, TimeUnit.SECONDS)
         .build()
 
+    private fun sanitizeInput(input: String): String {
+        return input.trim().replace("\\", "").replace("\r", "").replace("\n", "")
+    }
+
     fun updateConfig(
         baseUrl: String,
         apiKey: String,
@@ -42,15 +46,15 @@ class OpenAiCompatibleClient(
         visionModel: String,
         planningModel: String
     ) {
-        this.baseUrl = baseUrl.trim()
-        this.apiKey = apiKey.trim()
-        this.defaultChatModel = chatModel.trim()
-        this.defaultVisionModel = visionModel.trim()
-        this.defaultPlanningModel = planningModel.trim()
+        this.baseUrl = sanitizeInput(baseUrl)
+        this.apiKey = sanitizeInput(apiKey)
+        this.defaultChatModel = sanitizeInput(chatModel)
+        this.defaultVisionModel = sanitizeInput(visionModel)
+        this.defaultPlanningModel = sanitizeInput(planningModel)
     }
 
     private fun normalizeEndpoint(url: String): String {
-        var trimmed = url.trim().removeSuffix("/")
+        var trimmed = sanitizeInput(url).removeSuffix("/")
         if (trimmed.endsWith("/chat/completions")) {
             return trimmed
         }
@@ -64,14 +68,17 @@ class OpenAiCompatibleClient(
     }
 
     private fun isMistralOrPixtral(modelName: String, url: String): Boolean {
-        return modelName.contains("mistral", ignoreCase = true) ||
-                modelName.contains("pixtral", ignoreCase = true) ||
-                url.contains("mistral.ai", ignoreCase = true)
+        val cleanModel = sanitizeInput(modelName)
+        val cleanUrl = sanitizeInput(url)
+        return cleanModel.contains("mistral", ignoreCase = true) ||
+                cleanModel.contains("pixtral", ignoreCase = true) ||
+                cleanUrl.contains("mistral.ai", ignoreCase = true)
     }
 
     private fun resolveModelName(modelName: String, url: String): String {
-        val trimmedModel = modelName.trim()
-        if (url.contains("gateway.genrostore.com") || url.contains("openrouter.ai")) {
+        val trimmedModel = sanitizeInput(modelName)
+        val cleanUrl = sanitizeInput(url)
+        if (cleanUrl.contains("gateway.genrostore.com") || cleanUrl.contains("openrouter.ai")) {
             // GenroStore gateway active catalog supports pixtral-12b-2409 for Mistral Vision.
             // Map pixtral-large models to supported mistral/pixtral-12b-2409 to prevent 401/400 gateway errors.
             if (trimmedModel.contains("pixtral-large", ignoreCase = true)) {
