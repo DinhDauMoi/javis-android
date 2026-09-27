@@ -364,12 +364,13 @@ class OpenAiCompatibleClient(
         client.newCall(requestBuilder.build()).execute().use { response ->
             val bodyString = response.body?.string() ?: ""
             if (!response.isSuccessful) {
+                val detail = extractErrorMessage(bodyString)
                 val errorMsg = when (response.code) {
-                    400 -> "HTTP 400 Bad Request: $bodyString"
-                    401 -> "HTTP 401: Invalid or unauthorized API Key."
-                    429 -> "HTTP 429: API rate limit exceeded."
-                    500, 502, 503 -> "HTTP ${response.code}: AI server maintenance or overload."
-                    else -> "AI connection error (${response.code}): $bodyString"
+                    400 -> "HTTP 400 Bad Request: $detail"
+                    401 -> "HTTP 401: Invalid or unauthorized API Key ($detail)"
+                    429 -> "HTTP 429: API rate limit exceeded ($detail)"
+                    500, 502, 503 -> "HTTP ${response.code}: AI server maintenance or overload ($detail)"
+                    else -> "AI connection error (${response.code}): $detail"
                 }
                 throw RuntimeException(errorMsg)
             }
@@ -414,7 +415,7 @@ class OpenAiCompatibleClient(
     }
 
     private fun extractErrorMessage(jsonBody: String): String {
-        return try {
+        val extracted = try {
             val obj = JSONObject(jsonBody)
             val errObj = obj.optJSONObject("error")
             errObj?.optString("message")?.ifBlank { null }
@@ -424,6 +425,11 @@ class OpenAiCompatibleClient(
         } catch (_: Exception) {
             jsonBody.take(200)
         }
+
+        if (extracted.contains("No active credentials for provider", ignoreCase = true)) {
+            return "$extracted -> Mẹo: GenroStore Gateway hiện thiếu credential cho provider này. Vui lòng chuyển Base URL sang https://api.mistral.ai/v1 và sử dụng Mistral API Key trực tiếp."
+        }
+        return extracted
     }
 
     /**
