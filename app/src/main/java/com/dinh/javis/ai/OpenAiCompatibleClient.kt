@@ -364,8 +364,6 @@ class OpenAiCompatibleClient(
         val cleanKey = sanitizeInput(apiKey)
         if (cleanKey.isNotBlank()) {
             requestBuilder.header("Authorization", "Bearer $cleanKey")
-            requestBuilder.header("x-api-key", cleanKey)
-            requestBuilder.header("api-key", cleanKey)
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
@@ -466,8 +464,6 @@ class OpenAiCompatibleClient(
             val cleanKey = sanitizeInput(apiKey)
             if (cleanKey.isNotBlank()) {
                 requestBuilder.header("Authorization", "Bearer $cleanKey")
-                requestBuilder.header("x-api-key", cleanKey)
-                requestBuilder.header("api-key", cleanKey)
             }
 
             client.newCall(requestBuilder.build()).execute().use { response ->
