@@ -193,7 +193,9 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onLogMessage = { text, isUser, tag ->
-                runOnUiThread { appendMessage(text, isUser, tag) }
+                if (tag != "HOTWORD" && tag != "SCORE" && tag != "WAKE" && tag != "TIMING") {
+                    runOnUiThread { appendMessage(text, isUser, tag) }
+                }
             }
         )
 
