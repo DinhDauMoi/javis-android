@@ -51,23 +51,43 @@ class ModelRouter(private val context: Context) {
         }
     }
 
+    private val chatMemory = ChatMemoryManager()
+
     /**
-     * Chat bằng tin nhắn dạng chuỗi văn bản (Tương thích ngược với OpenAiClient cũ)
+     * Clear active compact chat memory history
+     */
+    fun clearChatMemory() {
+        chatMemory.clearMemory()
+    }
+
+    /**
+     * Chat bằng tin nhắn dạng chuỗi văn bản với bối cảnh hội thoại thu gọn (Compact Chat Context Memory)
      */
     suspend fun askAi(prompt: String): String {
         syncClientWithActiveProfile()
-        val messages = listOf(
-            ChatMessage(
-                role = "system",
-                content = "Bạn là JAVIS, trợ lý AI cá nhân bằng tiếng Việt. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để trò chuyện. Tránh dùng ký hiệu định dạng markdown như **, #, *."
-            ),
-            ChatMessage(role = "user", content = prompt)
+        val systemMessage = ChatMessage(
+            role = "system",
+            content = "Bạn là JAVIS, trợ lý AI cá nhân bằng tiếng Việt. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để trò chuyện. Tránh dùng ký hiệu định dạng markdown như **, #, *."
         )
-        return try {
-            openAiClient.chat(messages, ModelOptions(temperature = 0.7, maxTokens = 150))
+
+        val compactHistory = chatMemory.getCompactHistory()
+        val fullMessages = mutableListOf<ChatMessage>()
+        fullMessages.add(systemMessage)
+        fullMessages.addAll(compactHistory)
+        fullMessages.add(ChatMessage(role = "user", content = prompt))
+
+        val response = try {
+            openAiClient.chat(fullMessages, ModelOptions(temperature = 0.7, maxTokens = 150))
         } catch (e: Exception) {
             "Lỗi kết nối AI: ${e.localizedMessage ?: "Không xác định"}"
         }
+
+        if (response.isNotBlank() && !response.startsWith("Lỗi kết nối")) {
+            chatMemory.addMessage("user", prompt)
+            chatMemory.addMessage("assistant", response)
+        }
+
+        return response
     }
 
     /**
