@@ -356,9 +356,9 @@ class OpenAiCompatibleClient(
 
         if (apiKey.isNotBlank()) {
             val trimmedKey = apiKey.trim()
-            requestBuilder.addHeader("Authorization", "Bearer $trimmedKey")
-            requestBuilder.addHeader("x-api-key", trimmedKey)
-            requestBuilder.addHeader("api-key", trimmedKey)
+            requestBuilder.header("Authorization", "Bearer $trimmedKey")
+            requestBuilder.header("x-api-key", trimmedKey)
+            requestBuilder.header("api-key", trimmedKey)
         }
 
         client.newCall(requestBuilder.build()).execute().use { response ->
@@ -457,9 +457,9 @@ class OpenAiCompatibleClient(
 
             if (apiKey.isNotBlank()) {
                 val trimmedKey = apiKey.trim()
-                requestBuilder.addHeader("Authorization", "Bearer $trimmedKey")
-                requestBuilder.addHeader("x-api-key", trimmedKey)
-                requestBuilder.addHeader("api-key", trimmedKey)
+                requestBuilder.header("Authorization", "Bearer $trimmedKey")
+                requestBuilder.header("x-api-key", trimmedKey)
+                requestBuilder.header("api-key", trimmedKey)
             }
 
             client.newCall(requestBuilder.build()).execute().use { response ->

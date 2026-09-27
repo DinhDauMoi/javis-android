@@ -41,20 +41,21 @@ class PreferenceManager(context: Context) {
 
     var openAiApiKey: String
         get() {
-            // Đọc từ kho lưu trữ Keystore an toàn
+            // First check hardware Keystore storage
             val encryptedKey = keystoreManager.decrypt(DEFAULT_KEY_ALIAS)
-            if (encryptedKey.isNotEmpty()) return encryptedKey
-            // Fallback nếu vẫn còn key cũ chưa di chuyển
+            if (encryptedKey.isNotBlank()) return encryptedKey
+            // Secondary fallback to SharedPreferences
             return prefs.getString(KEY_API_KEY, "") ?: ""
         }
         set(value) {
             val trimmed = value.trim()
             if (trimmed.isEmpty()) {
                 keystoreManager.deleteKey(DEFAULT_KEY_ALIAS)
+                prefs.edit().remove(KEY_API_KEY).apply()
             } else {
                 keystoreManager.encrypt(DEFAULT_KEY_ALIAS, trimmed)
+                prefs.edit().putString(KEY_API_KEY, trimmed).apply()
             }
-            prefs.edit().remove(KEY_API_KEY).apply()
         }
 
     var openAiModel: String

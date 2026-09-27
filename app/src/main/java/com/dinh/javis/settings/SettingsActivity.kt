@@ -130,9 +130,13 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         binding.btnTestAiConnection.setOnClickListener {
-            val url = binding.etBaseUrl.text?.toString()?.trim() ?: "https://api.openai.com/v1"
-            val key = binding.etApiKey.text?.toString()?.trim() ?: ""
-            val model = binding.etModelName.text?.toString()?.trim() ?: "gpt-4o-mini"
+            val urlInput = binding.etBaseUrl.text?.toString()?.trim() ?: ""
+            val keyInput = binding.etApiKey.text?.toString()?.trim() ?: ""
+            val modelInput = binding.etModelName.text?.toString()?.trim() ?: ""
+
+            val url = urlInput.ifBlank { preferenceManager.openAiBaseUrl }
+            val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
+            val model = modelInput.ifBlank { preferenceManager.openAiModel }
 
             binding.btnTestAiConnection.isEnabled = false
             binding.btnTestAiConnection.text = "⏳ Đang kiểm tra kết nối..."
