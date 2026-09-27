@@ -4,16 +4,16 @@ import com.dinh.javis.ai.capabilities.ChatMessage
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Quản lý ngữ cảnh hội thoại thu gọn (Compact Chat Context Memory) cho người dùng JAVIS.
- * Lưu trữ tối đa N lượt trò chuyện gần nhất (mặc định 6 tin nhắn) để AI nhớ bối cảnh hỏi đáp liền mạch,
- * đồng thời giới hạn độ dài mỗi tin nhắn để giữ token thu gọn, siêu nhanh và tiết kiệm.
+ * Manages compact conversation context memory for JAVIS app users.
+ * Retains up to N recent conversation turns (default 6 messages max) for seamless multi-turn AI context,
+ * while truncating message lengths to keep token footprint small, fast, and cost-effective.
  */
 class ChatMemoryManager(private val maxMessages: Int = 6) {
 
     private val history = CopyOnWriteArrayList<ChatMessage>()
 
     /**
-     * Thêm tin nhắn của người dùng hoặc AI vào bộ nhớ ngữ cảnh thu gọn
+     * Add a user or assistant message to the compact context history
      */
     fun addMessage(role: String, content: String) {
         if (content.isBlank()) return
@@ -25,14 +25,14 @@ class ChatMemoryManager(private val maxMessages: Int = 6) {
     }
 
     /**
-     * Lấy danh sách lịch sử hội thoại thu gọn hiện tại
+     * Retrieve the active list of compact conversation history messages
      */
     fun getCompactHistory(): List<ChatMessage> {
         return history.toList()
     }
 
     /**
-     * Xóa sạch lịch sử ngữ cảnh khi người dùng muốn bắt đầu chủ đề mới
+     * Clear all conversation context memory history
      */
     fun clearMemory() {
         history.clear()

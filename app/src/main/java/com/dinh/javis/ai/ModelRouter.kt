@@ -61,7 +61,7 @@ class ModelRouter(private val context: Context) {
     }
 
     /**
-     * Chat bằng tin nhắn dạng chuỗi văn bản với bối cảnh hội thoại thu gọn (Compact Chat Context Memory)
+     * Chat using text prompt with compact conversation context memory
      */
     suspend fun askAi(prompt: String): String {
         syncClientWithActiveProfile()

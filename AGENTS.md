@@ -54,6 +54,15 @@
   - TikTok: `com.zhiliaoapp.musically` (or package query fuzzy lookup)
   - If target package is uninstalled: Speak feedback string `"Chưa cài đặt [Tên ứng dụng] trên thiết bị này"`.
 
+### 3.4 Compact Chat Context & TTS Markdown Sanitization
+- **Compact Chat Context Memory (`ChatMemoryManager`)**:
+  - App chat AI interactions MUST maintain a compact sliding window of recent conversation turns (default 6 messages max: 3 user questions + 3 AI responses).
+  - Each stored message content MUST be truncated if exceeding 300 characters (`take(300) + "..."`) to guarantee a lightweight token footprint, fast response latency, and low API cost.
+  - System prompts MUST remain generalized without hardcoded user names or specific phone model strings.
+- **TTS Spoken Text Sanitization (`stripMarkdownForSpeech`)**:
+  - All spoken responses passed to `Speaker.speak()` MUST be pre-processed by `TextNormalizer.stripMarkdownForSpeech()` before invoking Android `TextToSpeech.speak()`.
+  - Strip Markdown formatting symbols (`**`, `*`, `###`, `` `code` ``, `\`\`\`codeblock\`\`\`, `[text](url)`, `https://...`, `- lists`, `~~strikethrough~~`) to prevent the TTS engine from pronouncing raw symbols like "sao sao", "hoa thị", or "thăng thăng".
+
 ---
 
 ## 4. Skills & Capabilities Framework
