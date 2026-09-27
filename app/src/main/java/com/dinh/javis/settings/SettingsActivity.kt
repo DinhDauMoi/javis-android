@@ -4,6 +4,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.content.res.ColorStateList
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.ArrayAdapter
 import android.widget.SeekBar
 import android.widget.Toast
@@ -94,6 +97,29 @@ class SettingsActivity : AppCompatActivity() {
         binding.etApiKey.setText(preferenceManager.openAiApiKey)
         binding.etModelName.setText(preferenceManager.openAiModel)
 
+        val updateApiKeyHelperNote = {
+            val typedKey = binding.etApiKey.text?.toString()?.trim() ?: ""
+            val activeKey = typedKey.ifBlank { preferenceManager.openAiApiKey }
+            if (activeKey.isNotBlank()) {
+                val masked = if (activeKey.length > 6) "...${activeKey.takeLast(4)}" else "***"
+                binding.tilApiKey.helperText = "🔑 API Key: ĐÃ NẠP (${activeKey.length} ký tự | $masked) - Sẵn sàng gửi trong Header"
+                binding.tilApiKey.setHelperTextColor(ColorStateList.valueOf(getColor(R.color.status_green)))
+            } else {
+                binding.tilApiKey.helperText = "⚠️ API Key: ĐANG ĐỂ TRỐNG - Yêu cầu sẽ gửi không có khóa xác thực (Nặc danh)"
+                binding.tilApiKey.setHelperTextColor(ColorStateList.valueOf(getColor(android.R.color.holo_orange_light)))
+            }
+        }
+
+        updateApiKeyHelperNote()
+
+        binding.etApiKey.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updateApiKeyHelperNote()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
         binding.btnPresetProvider.setOnClickListener {
             showPresetProviderDialog()
         }
@@ -125,6 +151,7 @@ class SettingsActivity : AppCompatActivity() {
                     )
                     database.aiModelProfileDao().insertProfile(updatedProfile)
                 }
+                updateApiKeyHelperNote()
                 Toast.makeText(this@SettingsActivity, getString(R.string.settings_saved), Toast.LENGTH_SHORT).show()
             }
         }
@@ -138,10 +165,17 @@ class SettingsActivity : AppCompatActivity() {
             val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
             val model = modelInput.ifBlank { preferenceManager.openAiModel }
 
+            val keyNotice = if (key.isNotBlank()) {
+                val maskedKey = if (key.length > 6) "...${key.takeLast(4)}" else "***"
+                "🔑 API Key: ĐÃ NẠP (${key.length} ký tự | $maskedKey)"
+            } else {
+                "⚠️ API Key: ĐANG ĐỂ TRỐNG (Gửi dưới dạng Nặc danh/Anonymous)"
+            }
+
             binding.btnTestAiConnection.isEnabled = false
             binding.btnTestAiConnection.text = "⏳ Đang kiểm tra kết nối..."
             binding.tvConnectionResult.visibility = View.VISIBLE
-            binding.tvConnectionResult.text = "Đang gửi yêu cầu thử nghiệm..."
+            binding.tvConnectionResult.text = "$keyNotice\n⏳ Đang gửi yêu cầu tới máy chủ AI..."
             binding.tvConnectionResult.setTextColor(getColor(R.color.text_secondary))
 
             lifecycleScope.launch {
@@ -152,10 +186,10 @@ class SettingsActivity : AppCompatActivity() {
                 binding.btnTestAiConnection.text = "⚡ KIỂM TRA KẾT NỐI AI"
 
                 testResult.onSuccess { pair ->
-                    binding.tvConnectionResult.text = "✅ ${pair.second}"
+                    binding.tvConnectionResult.text = "$keyNotice\n✅ ${pair.second}"
                     binding.tvConnectionResult.setTextColor(getColor(R.color.status_green))
                 }.onFailure { err ->
-                    binding.tvConnectionResult.text = "❌ ${err.message}"
+                    binding.tvConnectionResult.text = "$keyNotice\n❌ ${err.message}"
                     binding.tvConnectionResult.setTextColor(getColor(android.R.color.holo_red_light))
                 }
             }
