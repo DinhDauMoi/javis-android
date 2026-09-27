@@ -35,7 +35,7 @@ class OpenAiClient(private val preferenceManager: PreferenceManager) {
 
             val systemMessage = ChatMessage(
                 role = "system",
-                content = "Bạn là JAVIS, trợ lý AI cá nhân tiếng Việt của anh Dinh trên điện thoại OPPO Find X8 Ultra. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để đọc bằng giọng nói."
+                content = "Bạn là JAVIS, trợ lý AI cá nhân bằng tiếng Việt. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để trò chuyện. Tránh dùng ký hiệu định dạng markdown như **, #, *."
             )
             val userMessage = ChatMessage(role = "user", content = prompt)
 

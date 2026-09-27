@@ -65,4 +65,55 @@ object TextNormalizer {
         val normKeyword = removeAccents(keyword)
         return normUser.contains(normKeyword)
     }
+
+    /**
+     * Dọn dẹp tất cả ký hiệu định dạng Markdown (**, *, #, ```, ``, [], (), ~, v.v.)
+     * để TTS (Text-To-Speech) đọc giọng nói tiếng Việt tự nhiên, không bị phát âm "sao sao", "hoa thị", "thăng".
+     */
+    fun stripMarkdownForSpeech(input: String?): String {
+        if (input.isNullOrBlank()) return ""
+
+        var text = input
+
+        // 1. Loại bỏ các khối code (code block ```...```)
+        text = text.replace(Regex("(?s)```[a-zA-Z0-9_-]*\\n?(.*?)```")) { matchResult ->
+            matchResult.groupValues[1]
+        }
+
+        // 2. Loại bỏ code inline (`...`)
+        text = text.replace(Regex("`([^`]+)`"), "$1")
+
+        // 3. Chuyển đổi link markdown [Anchor Text](http://...) -> Anchor Text
+        text = text.replace(Regex("\\[([^\\]]+)\\]\\(([^)]+)\\)"), "$1")
+
+        // 4. Loại bỏ URL trực tiếp (http://, https://) để TTS không đọc "h-t-t-p-s-hai-chấm..."
+        text = text.replace(Regex("https?://\\S+"), "")
+
+        // 5. Loại bỏ tiêu đề Markdown (# Header, ## Header, ### Header)
+        text = text.replace(Regex("(?m)^#{1,6}\\s*"), "")
+
+        // 6. Loại bỏ ký hiệu danh sách (- item, * item, + item, 1. item)
+        text = text.replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
+        text = text.replace(Regex("(?m)^\\s*\\d+\\.\\s+"), "")
+
+        // 7. Loại bỏ trích dẫn (> quote) và đường kẻ ngang (---, ***, ___)
+        text = text.replace(Regex("(?m)^>\\s*"), "")
+        text = text.replace(Regex("(?m)^[-*_]{3,}\\s*$"), "")
+
+        // 8. Loại bỏ định dạng đậm/nghiêng (***, **, *, ___, __, _)
+        text = text.replace(Regex("\\*\\*\\*|___"), "")
+        text = text.replace(Regex("\\*\\*|__"), "")
+        text = text.replace(Regex("\\*|_"), "")
+
+        // 9. Loại bỏ gạch ngang chữ (~~text~~)
+        text = text.replace(Regex("~~([^~]+)~~"), "$1")
+        text = text.replace("~~", "")
+
+        // 10. Loại bỏ bảng markdown (ký tự |) và dấu huyền, ngoặc rác còn sót lại
+        text = text.replace("|", " ")
+        text = text.replace("`", "")
+
+        // 11. Chuẩn hóa khoảng trắng kép và dòng trống thừa
+        return text.replace(Regex("\\s+"), " ").trim()
+    }
 }
