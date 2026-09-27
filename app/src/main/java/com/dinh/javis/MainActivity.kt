@@ -193,13 +193,15 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onLogMessage = { text, isUser, tag ->
-                if (tag != "HOTWORD" && tag != "SCORE" && tag != "WAKE" && tag != "TIMING") {
+                val showLog = preferenceManager.isDebugModeEnabled ||
+                        (tag != "HOTWORD" && tag != "SCORE" && tag != "WAKE" && tag != "TIMING")
+                if (showLog) {
                     runOnUiThread { appendMessage(text, isUser, tag) }
                 }
             }
         )
 
-        // Khởi động Hotword nếu có quyền và được bật (mặc định BẬT)
+        // Start Hotword service if permissions are granted and feature is enabled (enabled by default)
         if (preferenceManager.isWakeWordEnabled && PermissionHelper.hasCorePermissions(this)) {
             hotwordManager.start()
         }

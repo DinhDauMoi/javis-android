@@ -644,6 +644,56 @@
 
             </LinearLayout>
 
+            <!-- Card 6: Debug Mode & Bug Reporting -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="32dp"
+                android:background="@drawable/bg_glass_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🛠️ Chế độ Debug &amp; Báo cáo lỗi"
+                    android:textColor="@color/primary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="Bật nhật ký hệ thống chi tiết trên màn hình chat hoặc gửi thông tin chẩn đoán lỗi cho nhà phát triển."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchDebugMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="Hiển thị log Debug trên màn hình Chat"
+                    android:textColor="@color/text_primary"
+                    app:thumbTint="@color/primary"
+                    app:trackTint="#4000E5FF" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSendBugReport"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:backgroundTint="#2D1537"
+                    android:text="🐛 GỬI BÁO CÁO LỖI CHO DEV"
+                    android:textColor="#FF80AB"
+                    android:textStyle="bold"
+                    app:cornerRadius="10dp"
+                    app:strokeColor="#FF80AB"
+                    app:strokeWidth="1dp" />
+
+            </LinearLayout>
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

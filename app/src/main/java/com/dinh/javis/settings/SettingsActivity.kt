@@ -70,6 +70,7 @@ class SettingsActivity : AppCompatActivity() {
         setupFloatingMicSection()
         setupCustomCommandsRecycler()
         setupUpdateSection()
+        setupDebugAndReportSection()
 
         if (intent.getBooleanExtra(EXTRA_AUTO_UPDATE, false)) {
             checkAppUpdate(isManual = false)
@@ -699,6 +700,79 @@ class SettingsActivity : AppCompatActivity() {
                 binding.layoutUpdateProgress.visibility = View.GONE
                 Toast.makeText(this@SettingsActivity, "Tải bản cập nhật thất bại: ${err.message}", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    /**
+     * Configures the Debug Mode toggle switch and the Bug Report exporter (lang: en).
+     */
+    private fun setupDebugAndReportSection() {
+        binding.switchDebugMode.isChecked = preferenceManager.isDebugModeEnabled
+        binding.switchDebugMode.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.isDebugModeEnabled = isChecked
+            val msg = if (isChecked) "Đã bật chế độ Debug. Log hệ thống sẽ hiển thị trên màn hình chat." else "Đã tắt chế độ Debug."
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+
+        binding.btnSendBugReport.setOnClickListener {
+            generateAndSendBugReport()
+        }
+    }
+
+    /**
+     * Collects device metrics, configuration options, permission statuses, and recent task runs
+     * into a clean structured report, launching a chooser intent for sending to developer (lang: en).
+     */
+    private fun generateAndSendBugReport() {
+        lifecycleScope.launch {
+            val reportBuilder = StringBuilder()
+            reportBuilder.append("=== JAVIS BUG REPORT ===\n")
+            reportBuilder.append("Time: ").append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())).append("\n")
+            reportBuilder.append("App Version: ").append(updateManager.getCurrentVersionName())
+                .append(" (Code: ").append(updateManager.getCurrentVersionCode()).append(")\n")
+            reportBuilder.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL)
+                .append(" (Android ").append(Build.VERSION.RELEASE).append(", SDK ").append(Build.VERSION.SDK_INT).append(")\n")
+
+            reportBuilder.append("\n--- CONFIGURATION ---\n")
+            reportBuilder.append("Base URL: ").append(preferenceManager.openAiBaseUrl).append("\n")
+            reportBuilder.append("Model: ").append(preferenceManager.openAiModel).append("\n")
+            reportBuilder.append("WakeWord Threshold: ").append(preferenceManager.wakeWordThreshold).append("\n")
+            reportBuilder.append("Debug Mode: ").append(preferenceManager.isDebugModeEnabled).append("\n")
+            reportBuilder.append("Behavior Agent Enabled: ").append(preferenceManager.isBehaviorAgentEnabled).append("\n")
+            reportBuilder.append("Behavior Analytics Enabled: ").append(preferenceManager.isBehaviorAnalyticsEnabled).append("\n")
+
+            reportBuilder.append("\n--- PERMISSIONS ---\n")
+            reportBuilder.append("Accessibility Enabled: ").append(PermissionHelper.isAccessibilityServiceEnabled(this@SettingsActivity)).append("\n")
+            reportBuilder.append("Screen Capture Active: ").append(com.dinh.javis.vision.ScreenCaptureService.isCapturing()).append("\n")
+            reportBuilder.append("Overlay Allowed: ").append(PermissionHelper.canDrawOverlays(this@SettingsActivity)).append("\n")
+            reportBuilder.append("Battery Opt Ignored: ").append(PermissionHelper.isIgnoringBatteryOptimizations(this@SettingsActivity)).append("\n")
+
+            reportBuilder.append("\n--- RECENT TASK RUNS ---\n")
+            try {
+                val recentRuns = database.taskRunDao().getAllRuns().take(5)
+                if (recentRuns.isEmpty()) {
+                    reportBuilder.append("No recent task runs recorded.\n")
+                } else {
+                    for (run in recentRuns) {
+                        reportBuilder.append("- Goal: ").append(run.taskGoal)
+                            .append(" | Status: ").append(run.status)
+                            .append(" | Steps: ").append(run.stepCount)
+                            .append(" | Duration: ").append(run.durationMs).append("ms\n")
+                    }
+                }
+            } catch (e: Exception) {
+                reportBuilder.append("Error fetching task runs: ").append(e.message).append("\n")
+            }
+
+            val reportText = reportBuilder.toString()
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "[JAVIS Bug Report] ${Build.MANUFACTURER} ${Build.MODEL}")
+                putExtra(Intent.EXTRA_TEXT, reportText)
+            }
+
+            startActivity(Intent.createChooser(shareIntent, "Gửi báo cáo lỗi qua..."))
         }
     }
 }

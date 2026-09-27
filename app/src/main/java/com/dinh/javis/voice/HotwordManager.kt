@@ -50,33 +50,33 @@ class HotwordManager(
     private var openWakeWord: OpenWakeWord? = null
     private var speechRecognizer: SpeechRecognizer? = null
 
-    @Volatile private var isRunning = false                // Người dùng bật hay tắt
-    @Volatile private var isListeningCommand = false       // Đang chạy SpeechRecognizer nghe 1 lệnh
-    @Volatile private var isPausedForTts = false          // Đang tạm dừng cho TTS nói
+    @Volatile private var isRunning = false                // User enabled or disabled flag
+    @Volatile private var isListeningCommand = false       // Currently running SpeechRecognizer listening for single command
+    @Volatile private var isPausedForTts = false          // Temporarily paused while TTS is speaking
 
-    // Đếm số lần thử nghe lại khi không phát hiện tiếng nói (tối đa 1 lần thử lại)
+    // Retry counter for speech command recognition when no speech is detected (max 1 retry)
     private var commandRetryCount = 0
     private val MAX_COMMAND_RETRIES = 1
 
-    // Đo độ trễ từng bước (timestamp profiling)
+    // Latency profiling timestamps
     private var tWakeDetected = 0L
     private var tBeepStarted = 0L
     private var tSttStart = 0L
     private var tSttReady = 0L
 
-    // Debounce chống lặp lệnh trong vòng 1 giây (1000ms)
+    // Debounce duration to prevent duplicate command execution within 1 second (1000ms)
     private var lastCommandText = ""
     private var lastCommandTime = 0L
     private val DEBOUNCE_MS = 1000L
 
-    // Timeout 6 giây cho 1 lệnh nói
+    // 6-second timeout for spoken command execution
     private val COMMAND_TIMEOUT_MS = 6000L
     private val commandTimeoutRunnable = Runnable {
-        handleCommandTimeoutOrNoSpeech("Hết thời gian chờ lệnh (6 giây)")
+        handleCommandTimeoutOrNoSpeech("Command listening timeout (6s)")
     }
 
     init {
-        // Lắng nghe trạng thái TTS để micro và loa không đè nhau
+        // Listen to TTS speaking state so microphone and speaker do not overlap
         speaker.onSpeechStarted = {
             mainHandler.post {
                 isPausedForTts = true
@@ -118,28 +118,28 @@ class HotwordManager(
         mainHandler.removeCallbacks(commandTimeoutRunnable)
         glowOverlayManager.hide()
 
-        // Dừng và hủy OpenWakeWord
+        // Stop and release OpenWakeWord engine
         try {
             openWakeWord?.stop()
             openWakeWord?.release()
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi dừng openWakeWord", e)
+            Log.e(TAG, "Error stopping openWakeWord", e)
         }
         openWakeWord = null
 
-        // Dừng và hủy SpeechRecognizer
+        // Stop and destroy SpeechRecognizer
         cancelCommandListening()
         destroySpeechRecognizer()
 
-        // Dừng foreground service
+        // Stop persistent foreground service
         HotwordService.stop(context)
 
         onStatusChange("Đã tắt chờ gọi 'javis'", false, false)
-        Log.i(TAG, "HotwordManager đã dừng hẳn, mic đã được giải phóng")
+        Log.i(TAG, "HotwordManager fully stopped, mic released")
     }
 
     /**
-     * Kích hoạt nghe 1 lệnh thủ công (khi bấm nút Mic lớn hoặc từ Quick Settings Tile)
+     * Triggers one-shot voice command listening manually (e.g., via Mic button or Tile).
      */
     fun triggerOneShotCommand() {
         if (!isRunning) {
@@ -160,7 +160,7 @@ class HotwordManager(
     }
 
     // =========================================================================
-    // KHỞI TẠO & CHẠY OPENWAKEWORD
+    // INITIALIZE & EXECUTE OPENWAKEWORD ENGINE
     // =========================================================================
 
     private fun initAndStartHotword() {
@@ -172,7 +172,7 @@ class HotwordManager(
             if (openWakeWord == null) {
                 val builder = OpenWakeWord.Builder(context)
 
-                // Kiểm tra model: Ưu tiên javis.onnx trong assets, fallback dùng built-in HEY_JARVIS
+                // Model resolution: Prefer javis.onnx in assets, fallback to built-in HEY_JARVIS
                 val hasCustomModel = try {
                     context.assets.list("")?.contains("javis.onnx") == true
                 } catch (e: Exception) {
@@ -180,10 +180,10 @@ class HotwordManager(
                 }
 
                 if (hasCustomModel) {
-                    Log.i(TAG, "Sử dụng model riêng: javis.onnx từ thư mục assets")
+                    Log.i(TAG, "Using custom model: javis.onnx from assets directory")
                     builder.setModelAsset("javis.onnx")
                 } else {
-                    Log.i(TAG, "Sử dụng model built-in HEY_JARVIS ('Hey Jarvis' ≈ 'javis')")
+                    Log.i(TAG, "Using built-in model HEY_JARVIS ('Hey Jarvis' ≈ 'javis')")
                     builder.setModel(OpenWakeWord.BuiltInModel.HEY_JARVIS)
                 }
 
@@ -289,28 +289,28 @@ class HotwordManager(
     }
 
     // =========================================================================
-    // XỬ LÝ KHI BẮT ĐƯỢC TỪ KHÓA "JAVIS"
+    // HANDLE WAKE WORD DETECTION ("JAVIS")
     // =========================================================================
 
     private fun onWakeWordTriggered() {
         if (!isRunning || isListeningCommand) return
 
         tWakeDetected = System.currentTimeMillis()
-        Log.i(TAG, "⏱️ [T0 - Wake] Bắt được 'javis' lúc $tWakeDetected ms -> Bật viền sáng và phát beep")
+        Log.i(TAG, "⏱️ [T0 - Wake] Detected 'javis' at $tWakeDetected ms -> Enabling glow overlay and playing beep")
 
-        // 1. Tạm dừng ngay wake word detector để nhường mic cho SpeechRecognizer
+        // 1. Immediately pause wake word detector to hand over mic to SpeechRecognizer
         pauseHotwordDetector()
 
-        // 2. Bật ngay hiệu ứng viền màn hình phát sáng đa sắc
+        // 2. Enable multicolord glowing edge effect overlay
         glowOverlayManager.show()
 
-        // 3. Phát beep ngắn (120ms)
+        // 3. Play short 120ms beep sound
         tBeepStarted = System.currentTimeMillis()
         speaker.playWakeBeep()
         onStatusChange("Đang kích hoạt...", true, false)
-        Log.i(TAG, "⏱️ [T1 - Beep] Phát beep lúc $tBeepStarted ms (+${tBeepStarted - tWakeDetected}ms từ T0)")
+        Log.i(TAG, "⏱️ [T1 - Beep] Played beep at $tBeepStarted ms (+${tBeepStarted - tWakeDetected}ms from T0)")
 
-        // 4. Chờ beep phát xong (120ms) + 300ms = 420ms rồi mới bật SpeechRecognizer (tránh beep lấn mất chữ đầu)
+        // 4. Wait for beep completion (120ms) + buffer (300ms) = 420ms before starting SpeechRecognizer
         mainHandler.postDelayed({
             if (isRunning && !isListeningCommand && !isPausedForTts) {
                 commandRetryCount = 0
@@ -376,12 +376,12 @@ class HotwordManager(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
 
-            // Rút ngắn thời gian chờ kết thúc câu (500ms thay vì 1500ms mặc định)
+            // Shorten silence length to complete recognition faster (600ms instead of 1500ms default)
             putExtra("android.speech.extras.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 600L)
             putExtra("android.speech.extras.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 1000L)
             putExtra("android.speech.extras.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS", 1000L)
 
-            // Thử ưu tiên nhận diện offline ở lần thử đầu; nếu máy không có gói offline thì fallback online
+            // Prefer offline recognition on first attempt; fallback to online if offline package is missing
             if (!isRetryOnline) {
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             }
@@ -390,7 +390,7 @@ class HotwordManager(
         try {
             recognizer.startListening(intent)
 
-            // Đặt lịch timeout 6 giây tự động xử lý nếu người dùng không nói gì
+            // Schedule 6-second timeout automatically handled if user does not speak
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             mainHandler.postDelayed(commandTimeoutRunnable, COMMAND_TIMEOUT_MS)
 
@@ -429,7 +429,7 @@ class HotwordManager(
             onStatusChange("Chưa nghe rõ, đang nghe lại...", true, false)
             onLogMessage("⚠️ Chưa nghe rõ câu lệnh, đang thử nghe lại...", false, "THỬ LẠI")
 
-            // Beep báo và nghe lại 1 lần nữa thay vì ngủ luôn
+            // Beep and retry command listening once instead of immediately going idle
             speaker.playWakeBeep()
             try { speechRecognizer?.cancel() } catch (_: Exception) {}
 
@@ -439,7 +439,7 @@ class HotwordManager(
                 }
             }, 450L)
         } else {
-            Log.w(TAG, "$reason -> Đã hết lượt nghe lại, quay lại chờ wake word")
+            Log.w(TAG, "$reason -> Max retries reached, resuming wake word detection")
             commandRetryCount = 0
             cancelCommandListening()
             glowOverlayManager.hide()
@@ -475,13 +475,13 @@ class HotwordManager(
             val errorMsg = describeSpeechError(errorCode)
             Log.w(TAG, "SpeechRecognizer báo lỗi ($errorCode): $errorMsg")
 
-            // Nếu timeout hoặc không nghe rõ, beep và thử lại 1 lần nữa
+            // If timeout or unrecognized speech, beep and retry once instead of sleeping
             if (errorCode == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || errorCode == SpeechRecognizer.ERROR_NO_MATCH) {
-                handleCommandTimeoutOrNoSpeech("Không nhận diện được giọng nói ($errorMsg)")
+                handleCommandTimeoutOrNoSpeech("Speech recognition unrecognized ($errorMsg)")
             } else if ((errorCode == SpeechRecognizer.ERROR_CLIENT || errorCode == SpeechRecognizer.ERROR_SERVER || errorCode == SpeechRecognizer.ERROR_AUDIO || errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) && !isOfflineRetryAttempt) {
-                // Tự động thử lại với chế độ Online khi gói offline hoặc mic timing gặp lỗi trên các dòng máy khác nhau
+                // Automatically retry with Online mode when offline package or mic timing fails on specific devices
                 isOfflineRetryAttempt = true
-                Log.w(TAG, "SpeechRecognizer gặp lỗi $errorCode, đang thử lại với chế độ Online...")
+                Log.w(TAG, "SpeechRecognizer encountered error $errorCode, retrying with Online mode...")
                 destroySpeechRecognizer()
                 mainHandler.postDelayed({
                     if (isRunning && !isPausedForTts) {
@@ -508,16 +508,16 @@ class HotwordManager(
             val text = matches?.firstOrNull()?.trim() ?: ""
 
             val tDone = System.currentTimeMillis()
-            Log.i(TAG, "⏱️ [T5 - Final Result] Nhận diện lệnh thành công: \"$text\" lúc $tDone ms (Tổng chu trình: ${tDone - tWakeDetected}ms)")
+            Log.i(TAG, "⏱️ [T5 - Final Result] Command recognition succeeded: \"$text\" at $tDone ms (Total cycle: ${tDone - tWakeDetected}ms)")
 
             glowOverlayManager.hide()
 
             if (text.isNotEmpty()) {
                 commandRetryCount = 0
                 val now = System.currentTimeMillis()
-                // Debounce 1 giây: Bỏ qua nếu lệnh trùng lặp trong vòng 1s
+                // 1-second Debounce: Ignore duplicate commands within 1s window
                 if (text.equals(lastCommandText, ignoreCase = true) && (now - lastCommandTime < DEBOUNCE_MS)) {
-                    Log.d(TAG, "Debounce: bỏ qua kết quả trùng lặp nhanh: \"$text\"")
+                    Log.d(TAG, "Debounce: skipping rapid duplicate command: \"$text\"")
                 } else {
                     lastCommandText = text
                     lastCommandTime = now
@@ -525,11 +525,11 @@ class HotwordManager(
                     onCommandRecognized(text)
                 }
             } else {
-                handleCommandTimeoutOrNoSpeech("Không có từ nào trong kết quả nhận diện")
+                handleCommandTimeoutOrNoSpeech("No text recognized in results")
                 return
             }
 
-            // Nếu không có TTS đang nói thì resume wake word ngay sau 400ms
+            // Resume wake word detector after 400ms if TTS is not currently speaking
             if (!isPausedForTts) {
                 resumeHotwordDetector(delayMs = 400)
             }
@@ -541,7 +541,7 @@ class HotwordManager(
             if (partial.isNotEmpty()) {
                 onStatusChange("🎙️ $partial", true, false)
 
-                // TĂNG TỐC ĐỘ NHẬN LỆNH: Ngay khi partial result chứa từ khóa lệnh đã khớp thì thực hiện luôn!
+                // INSTANT COMMAND MATCHING: Execute immediately when partial result matches a known command keyword
                 val command = commandParser.parse(partial)
                 if (command !is Command.Unknown && command !is Command.AskAi) {
                     val tDone = System.currentTimeMillis()

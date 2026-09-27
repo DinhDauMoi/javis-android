@@ -115,6 +115,13 @@ class PreferenceManager(context: Context) {
         get() = prefs.getInt(KEY_AGENT_DEADLINE_SECONDS, 60)
         set(value) = prefs.edit().putInt(KEY_AGENT_DEADLINE_SECONDS, value.coerceIn(15, 300)).apply()
 
+    /**
+     * Option for Debug Mode to display system logs on the chat screen and enable diagnostic report export.
+     */
+    var isDebugModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DEBUG_MODE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEBUG_MODE_ENABLED, value).apply()
+
     companion object {
         private const val PREF_NAME = "javis_preferences"
         private const val KEY_BASE_URL = "openai_base_url"
@@ -131,6 +138,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_GLOW_OVERLAY_ENABLED = "glow_overlay_enabled"
         private const val KEY_BEHAVIOR_ANALYTICS_ENABLED = "behavior_analytics_enabled"
         private const val KEY_AGENT_DEADLINE_SECONDS = "agent_deadline_seconds"
+        private const val KEY_DEBUG_MODE_ENABLED = "debug_mode_enabled"
 
         const val DEFAULT_KEY_ALIAS = "default_openai_key"
     }
