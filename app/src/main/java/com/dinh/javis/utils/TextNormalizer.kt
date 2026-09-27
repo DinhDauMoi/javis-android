@@ -58,6 +58,26 @@ object TextNormalizer {
     }
 
     /**
+     * Strips hotword/wake word prefixes ("javis", "jarvis", "ê javis", "hey javis", "ơi javis", "javis ơi", "e javis")
+     * from user speech or text input so it can be cleanly displayed in the Chat UI.
+     * If the input consists solely of the hotword, returns the original text.
+     */
+    fun stripHotword(input: String?): String {
+        if (input.isNullOrBlank()) return ""
+        val trimmed = input.trim()
+
+        val hotwordPattern = Pattern.compile("^(?:e|ê|hey|oi|ơi)?\\s*(?:javis|jarvis)(?:\\s*(?:oi|ơi))?\\s*[,.:]?\\s*", Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE)
+        val matcher = hotwordPattern.matcher(trimmed)
+        val stripped = if (matcher.find()) {
+            trimmed.substring(matcher.end()).trim()
+        } else {
+            trimmed
+        }
+
+        return if (stripped.isEmpty()) trimmed else stripped
+    }
+
+    /**
      * So khớp gần đúng (fuzzy match / contains) giữa câu nói và từ khóa
      */
     fun matchesFuzzy(userInput: String, keyword: String): Boolean {

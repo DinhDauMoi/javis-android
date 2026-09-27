@@ -314,8 +314,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSpokenText(text: String) {
-        Toast.makeText(this, "JAVIS nghe: \"$text\"", Toast.LENGTH_SHORT).show()
-        appendMessage(text, isUser = true)
+        val displayMessage = com.dinh.javis.utils.TextNormalizer.stripHotword(text)
+        Toast.makeText(this, "JAVIS nghe: \"$displayMessage\"", Toast.LENGTH_SHORT).show()
+        appendMessage(displayMessage, isUser = true)
         binding.tvVoiceStatus.text = getString(R.string.status_processing)
 
         val command = commandParser.parse(text)

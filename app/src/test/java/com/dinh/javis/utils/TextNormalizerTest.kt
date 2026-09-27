@@ -25,4 +25,15 @@ class TextNormalizerTest {
         val expected = "Dùng lệnh adb devices và xem Báo Dân Trí nhé."
         assertEquals(expected, TextNormalizer.stripMarkdownForSpeech(input))
     }
+
+    @Test
+    fun testStripHotword_removesWakeWordPrefixes() {
+        assertEquals("lướt lên", TextNormalizer.stripHotword("javis lướt lên"))
+        assertEquals("mở tiktok", TextNormalizer.stripHotword("Jarvis mở tiktok"))
+        assertEquals("tìm tai nghe bluetooth", TextNormalizer.stripHotword("Ê javis tìm tai nghe bluetooth"))
+        assertEquals("tăng âm lượng", TextNormalizer.stripHotword("hey jarvis tăng âm lượng"))
+        assertEquals("cho nhỏ lại", TextNormalizer.stripHotword("javis ơi cho nhỏ lại"))
+        assertEquals("mở youtube", TextNormalizer.stripHotword("e javis mở youtube"))
+        assertEquals("javis", TextNormalizer.stripHotword("javis"))
+    }
 }
