@@ -361,7 +361,8 @@ class OpenAiCompatibleClient(
     }
 
     private fun executeRequest(endpoint: String, payload: JSONObject): String {
-        val requestBody = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val rawJson = payload.toString().replace("\\/", "/")
+        val requestBody = rawJson.toRequestBody("application/json; charset=utf-8".toMediaType())
         val requestBuilder = Request.Builder()
             .url(endpoint)
             .addHeader("Content-Type", "application/json")
@@ -373,8 +374,7 @@ class OpenAiCompatibleClient(
             requestBuilder.header("Authorization", "Bearer $cleanKey")
         }
 
-        val payloadStr = payload.toString()
-        val truncatedPayload = if (payloadStr.length > 1500) payloadStr.take(1500) + "... [truncated]" else payloadStr
+        val truncatedPayload = if (rawJson.length > 1500) rawJson.take(1500) + "... [truncated]" else rawJson
         Log.i("JAVIS_TEST", "=== API REQUEST ===")
         Log.i("JAVIS_TEST", "URL: $endpoint")
         Log.i("JAVIS_TEST", "Auth Header: Bearer $maskedKey (Key Length: ${cleanKey.length})")
@@ -474,7 +474,8 @@ class OpenAiCompatibleClient(
         }
 
         try {
-            val requestBody = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val rawJson = jsonPayload.toString().replace("\\/", "/")
+            val requestBody = rawJson.toRequestBody("application/json; charset=utf-8".toMediaType())
             val requestBuilder = Request.Builder()
                 .url(endpoint)
                 .addHeader("Content-Type", "application/json")
@@ -489,8 +490,7 @@ class OpenAiCompatibleClient(
             Log.i("JAVIS_TEST", "=== TEST CONNECTION API REQUEST ===")
             Log.i("JAVIS_TEST", "URL: $endpoint")
             Log.i("JAVIS_TEST", "Auth Header: Bearer $maskedKey (Key Length: ${cleanKey.length})")
-            Log.i("JAVIS_TEST", "Payload: ${jsonPayload.toString()}")
-
+            Log.i("JAVIS_TEST", "Payload: $rawJson")
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val latency = System.currentTimeMillis() - startTime
                 val bodyString = response.body?.string() ?: ""
