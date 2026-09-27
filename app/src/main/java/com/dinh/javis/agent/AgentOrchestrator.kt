@@ -476,6 +476,155 @@ class AgentOrchestrator(private val context: Context) {
         )
     }
 
+    /**
+     * Executes a shopping search task via ShopeeShoppingSkill with orchestrator-managed
+     * lifecycle, exclusive run ownership, cancellation support, and telemetry.
+     */
+    fun executeShopping(
+        request: com.dinh.javis.agent.shopping.ProductSearchRequest,
+        callback: TaskProgressCallback? = null,
+        legacyCallback: AgentCallback? = null
+    ) {
+        val taskRequest = TaskRequest(
+            goal = "Tìm mua ${request.query} trên Shopee",
+            taskCategory = TaskRequest.CATEGORY_SHOPPING,
+            allowedPackages = setOf("com.shopee.vn"),
+            budget = TaskBudget(
+                maxSteps = request.executionLimits.maxSearchResultPages * 4,
+                deadlineMs = 120_000L,
+                maxModelCalls = request.executionLimits.maxModelCalls.coerceAtLeast(5)
+            )
+        )
+        val runContext = RunContext(
+            request = taskRequest,
+            profileId = preferenceManager.activeAiProfileId
+        )
+
+        if (!activeRunRef.compareAndSet(null, runContext)) {
+            val msg = "Đang có một tác vụ khác đang chạy. Vui lòng dừng tác vụ trước."
+            callback?.onCompleted(TaskOutcome.FAILED, msg)
+            legacyCallback?.onCompleted(false, msg)
+            return
+        }
+
+        var outcome = TaskOutcome.INTERRUPTED
+        var finishMessage = "Tác vụ mua sắm bị gián đoạn."
+        var verifiedActionCount = 0
+
+        executionJob = CoroutineScope(Dispatchers.Main).launch {
+            val startTime = System.currentTimeMillis()
+            try {
+                withContext(Dispatchers.IO) {
+                    policyGuard.initDefaultRulesIfEmpty()
+                    database.taskRunDao().insertRun(
+                        TaskRun(
+                            runId = runContext.runId,
+                            profileId = runContext.profileId,
+                            taskGoal = taskRequest.goal.take(TaskRun.MAX_STORED_GOAL_LENGTH),
+                            taskCategory = taskRequest.taskCategory,
+                            startTime = startTime,
+                            endTime = 0L,
+                            status = TaskRun.STATUS_RUNNING,
+                            stepCount = 0
+                        )
+                    )
+                }
+
+                val skill = com.dinh.javis.agent.shopping.ShopeeShoppingSkill(
+                    context = context,
+                    observationEngine = observationEngine,
+                    modelRouter = modelRouter,
+                    policyGuard = policyGuard
+                )
+
+                val result = skill.execute(
+                    request = request,
+                    callback = object : AgentCallback {
+                        override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
+                            callback?.onStepStarted(stepIndex, maxSteps)
+                            legacyCallback?.onStepStarted(stepIndex, maxSteps)
+                        }
+
+                        override fun onThought(thought: String) {
+                            callback?.onStatusUpdate(thought)
+                            legacyCallback?.onThought(thought)
+                        }
+
+                        override fun onActionExecuted(action: String, details: String) {
+                            verifiedActionCount++
+                            legacyCallback?.onActionExecuted(action, details)
+                        }
+
+                        override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {
+                            legacyCallback?.onConfirmationRequired(question, onUserResponse)
+                        }
+
+                        override fun onCompleted(success: Boolean, message: String) {
+                            // Completed handled below from result outcome
+                        }
+                    }
+                )
+
+                outcome = result.outcome
+                finishMessage = result.summaryVi
+                val isSuccess = outcome == TaskOutcome.SUCCESS
+                callback?.onCompleted(outcome, finishMessage)
+                legacyCallback?.onCompleted(isSuccess, finishMessage)
+
+            } catch (e: CancellationException) {
+                outcome = TaskOutcome.CANCELLED
+                finishMessage = "Tác vụ mua sắm đã bị người dùng hủy."
+                callback?.onCompleted(outcome, finishMessage)
+                legacyCallback?.onCompleted(false, finishMessage)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during shopping execution", e)
+                outcome = TaskOutcome.FAILED
+                finishMessage = "Đã xảy ra lỗi: ${e.localizedMessage ?: "Không xác định"}"
+                callback?.onCompleted(outcome, finishMessage)
+                legacyCallback?.onCompleted(false, finishMessage)
+            } finally {
+                val endTime = System.currentTimeMillis()
+                val durationMs = endTime - startTime
+                withContext(Dispatchers.IO + NonCancellable) {
+                    if (activeRunRef.get()?.runId == runContext.runId) {
+                        val finalStatus = TaskRun.statusFromOutcome(outcome)
+                        database.taskRunDao().insertRun(
+                            TaskRun(
+                                runId = runContext.runId,
+                                profileId = runContext.profileId,
+                                taskGoal = taskRequest.goal.take(TaskRun.MAX_STORED_GOAL_LENGTH),
+                                taskCategory = taskRequest.taskCategory,
+                                startTime = startTime,
+                                endTime = endTime,
+                                status = finalStatus,
+                                stepCount = verifiedActionCount,
+                                verifiedActionCount = verifiedActionCount,
+                                durationMs = durationMs,
+                                failureReason = if (outcome != TaskOutcome.SUCCESS) finishMessage else null
+                            )
+                        )
+                        if (preferenceManager.isBehaviorAnalyticsEnabled) {
+                            behaviorAggregator.recordTaskMetric(
+                                runId = runContext.runId,
+                                taskCategory = taskRequest.taskCategory,
+                                event = TaskMetricEvent(
+                                    taskCategory = taskRequest.taskCategory,
+                                    outcome = outcome,
+                                    durationMs = durationMs,
+                                    verifiedActionCount = verifiedActionCount,
+                                    retryCount = 0,
+                                    failureCategory = if (outcome == TaskOutcome.FAILED) categorizeFailure(finishMessage) else null
+                                )
+                            )
+                        }
+                        behaviorAggregator.runRetentionCleanup()
+                        activeRunRef.compareAndSet(runContext, null)
+                    }
+                }
+            }
+        }
+    }
+
     private fun dispatchAction(service: JavisAccessibilityService, proposal: ActionProposal): Boolean {
         return when (proposal.action.uppercase()) {
             "CLICK" -> {

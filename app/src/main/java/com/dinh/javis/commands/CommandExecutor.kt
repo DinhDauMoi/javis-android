@@ -482,9 +482,10 @@ class CommandExecutor(
 
     private fun handleFindProduct(request: com.dinh.javis.agent.shopping.ProductSearchRequest) {
         onLogMessage("Bắt đầu tìm sản phẩm: \"${request.query}\" trên Shopee", false, "MUA SẮM")
-        scope.launch {
-            val skill = com.dinh.javis.agent.shopping.ShopeeShoppingSkill(context)
-            skill.execute(request, object : com.dinh.javis.agent.AgentCallback {
+        val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(context)
+        orchestrator.executeShopping(
+            request = request,
+            legacyCallback = object : com.dinh.javis.agent.AgentCallback {
                 override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
                     onLogMessage("Bước $stepIndex/$maxSteps: Đang xử lý...", false, "MUA SẮM")
                 }
@@ -506,11 +507,12 @@ class CommandExecutor(
                         respondWithVoice(message, if (success) "HOÀN THÀNH" else "THÔNG BÁO")
                     }
                 }
-            })
-        }
+            }
+        )
     }
 
     private fun handleUnknown(rawText: String) {
+        Log.w(TAG, "Unknown command received: $rawText")
         respondWithVoice("Tôi chưa hiểu câu lệnh này. Bạn hãy vào Cài đặt để thêm lệnh tùy chỉnh nhé!", "CHƯA HIỂU")
     }
 

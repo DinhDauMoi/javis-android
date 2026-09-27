@@ -15,6 +15,9 @@ data class ProductCandidate(
     val priceConditionDetails: String? = null,
     val rating: Float? = null,
     val reviewCount: Int? = null,
+    val salesCount: Int? = null,
+    val checkpointX: Float? = null,
+    val checkpointY: Float? = null,
     val specifications: List<String> = emptyList(),
     val isSponsored: Boolean = false,
     val isMall: Boolean = false,
@@ -22,7 +25,8 @@ data class ProductCandidate(
     val observedAtMs: Long = System.currentTimeMillis(),
     val source: String = "accessibility",
     val extractionConfidence: Float = 1.0f,
-    val missingFields: List<String> = emptyList()
+    val missingFields: List<String> = emptyList(),
+    val pageIndex: Int = 1
 ) {
     /**
      * Resolves the effective payable price.

@@ -344,10 +344,15 @@ class HotwordManager(
         speechRecognizer = null
     }
 
-    private fun startCommandListening() {
+    @Volatile private var isOfflineRetryAttempt = false
+
+    private fun startCommandListening(isRetryOnline: Boolean = false) {
         isListeningCommand = true
+        if (!isRetryOnline) {
+            isOfflineRetryAttempt = false
+        }
         tSttStart = System.currentTimeMillis()
-        Log.i(TAG, "⏱️ [T2 - STT Start] Bật SpeechRecognizer lúc $tSttStart ms (+${tSttStart - tBeepStarted}ms từ Beep, tổng: +${tSttStart - tWakeDetected}ms)")
+        Log.i(TAG, "⏱️ [T2 - STT Start] Bật SpeechRecognizer (retryOnline=$isRetryOnline) lúc $tSttStart ms")
 
         onStatusChange("🎙️ ĐANG NGHE... BẠN NÓI ĐI!", true, false)
         HotwordService.start(context, "🎙️ Đang nghe lệnh...")
@@ -372,12 +377,14 @@ class HotwordManager(
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
 
             // Rút ngắn thời gian chờ kết thúc câu (500ms thay vì 1500ms mặc định)
-            putExtra("android.speech.extras.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 500L)
-            putExtra("android.speech.extras.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
+            putExtra("android.speech.extras.SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS", 600L)
+            putExtra("android.speech.extras.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 1000L)
             putExtra("android.speech.extras.SPEECH_INPUT_MINIMUM_LENGTH_MILLIS", 1000L)
 
-            // Thử ưu tiên nhận diện offline nếu máy đã tải gói tiếng Việt offline
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            // Thử ưu tiên nhận diện offline ở lần thử đầu; nếu máy không có gói offline thì fallback online
+            if (!isRetryOnline) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
         }
 
         try {
@@ -387,17 +394,17 @@ class HotwordManager(
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             mainHandler.postDelayed(commandTimeoutRunnable, COMMAND_TIMEOUT_MS)
 
-            Log.d(TAG, "SpeechRecognizer đã bắt đầu lắng nghe lệnh (hẹn giờ 6s)")
+            Log.d(TAG, "SpeechRecognizer đã bắt đầu lắng nghe (retryOnline=$isRetryOnline)")
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi startListening, thử tạo lại recognizer", e)
             destroySpeechRecognizer()
-            val retryRec = getOrCreateSpeechRecognizer()
-            try {
-                retryRec?.startListening(intent)
-                mainHandler.removeCallbacks(commandTimeoutRunnable)
-                mainHandler.postDelayed(commandTimeoutRunnable, COMMAND_TIMEOUT_MS)
-            } catch (e2: Exception) {
-                Log.e(TAG, "Thất bại khi retry startListening", e2)
+            if (!isRetryOnline) {
+                mainHandler.postDelayed({
+                    if (isRunning && !isPausedForTts) {
+                        startCommandListening(isRetryOnline = true)
+                    }
+                }, 350L)
+            } else {
                 isListeningCommand = false
                 resumeHotwordDetector()
             }
@@ -468,10 +475,21 @@ class HotwordManager(
             val errorMsg = describeSpeechError(errorCode)
             Log.w(TAG, "SpeechRecognizer báo lỗi ($errorCode): $errorMsg")
 
-            // Nếu timeout hoặc không nghe rõ, beep và thử lại 1 lần nữa thay vì ngủ luôn
+            // Nếu timeout hoặc không nghe rõ, beep và thử lại 1 lần nữa
             if (errorCode == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || errorCode == SpeechRecognizer.ERROR_NO_MATCH) {
                 handleCommandTimeoutOrNoSpeech("Không nhận diện được giọng nói ($errorMsg)")
+            } else if ((errorCode == SpeechRecognizer.ERROR_CLIENT || errorCode == SpeechRecognizer.ERROR_SERVER || errorCode == SpeechRecognizer.ERROR_AUDIO || errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) && !isOfflineRetryAttempt) {
+                // Tự động thử lại với chế độ Online khi gói offline hoặc mic timing gặp lỗi trên các dòng máy khác nhau
+                isOfflineRetryAttempt = true
+                Log.w(TAG, "SpeechRecognizer gặp lỗi $errorCode, đang thử lại với chế độ Online...")
+                destroySpeechRecognizer()
+                mainHandler.postDelayed({
+                    if (isRunning && !isPausedForTts) {
+                        startCommandListening(isRetryOnline = true)
+                    }
+                }, 350L)
             } else {
+                isOfflineRetryAttempt = false
                 commandRetryCount = 0
                 isListeningCommand = false
                 glowOverlayManager.hide()

@@ -14,8 +14,9 @@
 
 ## 2. Language & Localization Guidelines
 - **Source Code, Identifiers & Comments (`lang: en`)**:
-  - All source code, class names, method signatures, variable names, architecture documentation, and inline rule comments must be written in English.
-  - Example: `// Handles audio focus acquisition and ducking behavior`
+  - All source code, class names, method signatures, variable names, architecture documentation, and inline comments must be strictly written in English.
+  - **Mandatory English Comments Rule**: Every non-trivial function, business logic block, algorithm, and data model must have clear, concise comments in English (`lang: en`). Never write code comments in Vietnamese or any language other than English.
+  - Example: `// Resolves physical tap coordinate from OCR bounding box`
 - **User Interface & Spoken Text (`lang: vi`)**:
   - All end-user facing strings, TTS responses, toast notifications, UI labels, dialog messages, and alert prompts must be strictly written in natural Vietnamese.
   - Example: `val toastMsg = "Bạn chưa bật quyền Trợ năng cho JAVIS"`

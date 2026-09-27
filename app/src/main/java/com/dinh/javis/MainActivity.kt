@@ -193,7 +193,9 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onLogMessage = { text, isUser, tag ->
-                runOnUiThread { appendMessage(text, isUser, tag) }
+                if (tag != "HOTWORD" && tag != "SCORE" && tag != "WAKE" && tag != "TIMING") {
+                    runOnUiThread { appendMessage(text, isUser, tag) }
+                }
             }
         )
 
@@ -314,8 +316,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSpokenText(text: String) {
-        Toast.makeText(this, "JAVIS nghe: \"$text\"", Toast.LENGTH_SHORT).show()
-        appendMessage(text, isUser = true)
+        val displayMessage = com.dinh.javis.utils.TextNormalizer.stripHotword(text)
+        Toast.makeText(this, "JAVIS nghe: \"$displayMessage\"", Toast.LENGTH_SHORT).show()
+        appendMessage(displayMessage, isUser = true)
         binding.tvVoiceStatus.text = getString(R.string.status_processing)
 
         val command = commandParser.parse(text)
