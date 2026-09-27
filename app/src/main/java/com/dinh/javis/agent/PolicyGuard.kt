@@ -1,6 +1,8 @@
 package com.dinh.javis.agent
 
 import android.content.Context
+import android.util.Log
+import com.dinh.javis.ai.capabilities.ScreenObservation
 import com.dinh.javis.data.AppDatabase
 import com.dinh.javis.data.PolicyRule
 
@@ -16,17 +18,32 @@ data class PolicyCheckResult(
 )
 
 /**
- * Bộ kiểm soát an toàn bảo mật (Safety Guardrails):
- * - Danh sách đen (Denylist) tự động chặn ngân hàng, ví tiền mã hóa, trình quản lý mật khẩu.
- * - Quét các từ khóa cực kỳ nhạy cảm (OTP, mật khẩu, CVV, mã PIN).
- * - Tôn trọng các quy tắc PolicyRule do người dùng tự thiết lập trong cơ sở dữ liệu Room.
+ * Safety guardrail policy engine (BA-03).
+ *
+ * Policy evaluation order (fixed from baseline):
+ * 1. Null/empty package check → ALLOW (no context to evaluate).
+ * 2. **Mandatory hardcoded deny list first** (banking, crypto, password managers).
+ *    Custom DB rules CANNOT override these protections.
+ * 3. Custom DB rules (user-defined allow/deny/require-confirm).
+ * 4. Sensitive keyword scan on visible text.
+ *
+ * Security invariants:
+ * - Protected packages cannot be bypassed by any custom rule.
+ * - Unknown or unreadable context (null package) is treated as non-actionable.
+ * - Screen text and model output are untrusted; neither changes scope or policy.
+ * - Upload/observation/action boundaries each check the current package before proceeding.
+ * - Model output cannot modify policy lists at runtime.
  */
 class PolicyGuard(private val context: Context) {
 
+    private val TAG = "PolicyGuard"
     private val database = AppDatabase.getDatabase(context)
 
-    // Danh sách ứng dụng tài chính, ngân hàng, ví điện tử
-    private val bankingPackages = listOf(
+    // ──────────────────────────────────────────────────────────────────────
+    // Hardcoded protected deny lists — CANNOT be overridden by custom rules
+    // ──────────────────────────────────────────────────────────────────────
+
+    private val PROTECTED_BANKING_PREFIXES = listOf(
         "com.vietcombank.",
         "com.mbmobile",
         "com.vpb.",
@@ -44,8 +61,7 @@ class PolicyGuard(private val context: Context) {
         "vn.viettelpay"
     )
 
-    // Danh sách ví crypto & trình quản lý mật khẩu
-    private val sensitivePackages = listOf(
+    private val PROTECTED_CRYPTO_PASSWORD_PREFIXES = listOf(
         "vip.mytoken.",
         "com.binance.",
         "com.wallet.crypto.trustapp",
@@ -59,8 +75,11 @@ class PolicyGuard(private val context: Context) {
         "com.google.android.packageinstaller"
     )
 
-    // Từ khóa nhạy cảm trên màn hình
-    private val sensitiveKeywords = listOf(
+    // ──────────────────────────────────────────────────────────────────────
+    // Sensitive on-screen keywords (require confirmation)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private val SENSITIVE_KEYWORDS = listOf(
         "mật khẩu",
         "password",
         "mã otp",
@@ -72,12 +91,69 @@ class PolicyGuard(private val context: Context) {
         "xác nhận thanh toán"
     )
 
-    suspend fun checkScreenAndPackage(packageName: String?, visibleText: String?): PolicyCheckResult {
+    /**
+     * Quick pre-observation check: can we proceed with this package at all?
+     * Must be called BEFORE reading full UI content or capturing images.
+     *
+     * Returns DENY for protected packages, ALLOW otherwise (further checks happen
+     * after observation in [checkActionDispatch]).
+     */
+    fun checkPackagePreObservation(packageName: String?): PolicyCheckResult {
         if (packageName.isNullOrBlank()) {
-            return PolicyCheckResult(PolicyDecision.ALLOW)
+            // Unknown context: treat as non-actionable; wait safely
+            return PolicyCheckResult(
+                PolicyDecision.DENY,
+                "Không xác định được ứng dụng đang chạy. JAVIS tạm dừng để đảm bảo an toàn."
+            )
         }
 
-        // 1. Kiểm tra quy tắc lưu trong Room DB trước
+        // 1. Protected banking packages — absolute deny
+        for (prefix in PROTECTED_BANKING_PREFIXES) {
+            if (packageName.contains(prefix, ignoreCase = true)) {
+                Log.w(TAG, "PRE-OBS DENY (banking): $packageName")
+                return PolicyCheckResult(
+                    PolicyDecision.DENY,
+                    "Dừng tác vụ: Ứng dụng tài chính/ngân hàng ($packageName) được bảo vệ tuyệt đối."
+                )
+            }
+        }
+
+        // 2. Protected crypto/password packages — absolute deny
+        for (prefix in PROTECTED_CRYPTO_PASSWORD_PREFIXES) {
+            if (packageName.contains(prefix, ignoreCase = true)) {
+                Log.w(TAG, "PRE-OBS DENY (crypto/password): $packageName")
+                return PolicyCheckResult(
+                    PolicyDecision.DENY,
+                    "Dừng tác vụ: Ứng dụng bảo mật mật khẩu hoặc ví điện tử ($packageName) không được phép tự động hóa."
+                )
+            }
+        }
+
+        return PolicyCheckResult(PolicyDecision.ALLOW)
+    }
+
+    /**
+     * Full policy check after observation. Called before sending content to a model or
+     * dispatching any action.
+     *
+     * Evaluation order (BA-03 fixed):
+     * 1. Mandatory protected-package deny (cannot be overridden).
+     * 2. Custom DB rules.
+     * 3. Sensitive keyword scan.
+     */
+    suspend fun checkScreenAndPackage(packageName: String?, visibleText: String?): PolicyCheckResult {
+        if (packageName.isNullOrBlank()) {
+            return PolicyCheckResult(
+                PolicyDecision.DENY,
+                "Không xác định được ứng dụng đang chạy. JAVIS tạm dừng để đảm bảo an toàn."
+            )
+        }
+
+        // Step 1: Mandatory protected deny lists (evaluated BEFORE custom rules)
+        val preCheck = checkPackagePreObservation(packageName)
+        if (preCheck.decision == PolicyDecision.DENY) return preCheck
+
+        // Step 2: Custom DB rules (user-defined, cannot bypass step 1)
         val customRule = database.policyRuleDao().getRuleForPackage(packageName)
         if (customRule != null) {
             when (customRule.policy) {
@@ -89,36 +165,15 @@ class PolicyGuard(private val context: Context) {
                     PolicyDecision.REQUIRE_CONFIRM,
                     "Ứng dụng $packageName yêu cầu bạn xác nhận trước khi tiếp tục."
                 )
-                PolicyRule.POLICY_ALLOW -> {
-                    // Tiếp tục quét từ khóa nhạy cảm
-                }
+                PolicyRule.POLICY_ALLOW -> { /* continue to keyword scan */ }
+                else -> { /* unknown policy — continue */ }
             }
         }
 
-        // 2. Kiểm tra danh sách Denylist mặc định (Ngân hàng & Ví tiền)
-        for (denied in bankingPackages) {
-            if (packageName.contains(denied, ignoreCase = true)) {
-                return PolicyCheckResult(
-                    PolicyDecision.DENY,
-                    "Dừng tác vụ: Ứng dụng tài chính/ngân hàng ($packageName) được bảo vệ tuyệt đối."
-                )
-            }
-        }
-
-        // 3. Kiểm tra ví Crypto & Password Manager
-        for (denied in sensitivePackages) {
-            if (packageName.contains(denied, ignoreCase = true)) {
-                return PolicyCheckResult(
-                    PolicyDecision.DENY,
-                    "Dừng tác vụ: Ứng dụng bảo mật mật khẩu hoặc ví điện tử ($packageName) không được phép tự động hóa."
-                )
-            }
-        }
-
-        // 4. Quét từ khóa nhạy cảm nếu có text hiển thị
+        // Step 3: Sensitive on-screen keyword scan
         if (!visibleText.isNullOrBlank()) {
             val lowerText = visibleText.lowercase()
-            for (keyword in sensitiveKeywords) {
+            for (keyword in SENSITIVE_KEYWORDS) {
                 if (lowerText.contains(keyword)) {
                     return PolicyCheckResult(
                         PolicyDecision.REQUIRE_CONFIRM,
@@ -132,7 +187,32 @@ class PolicyGuard(private val context: Context) {
     }
 
     /**
-     * Khởi tạo các quy tắc mặc định vào Room DB nếu chưa có
+     * Pre-upload check: should we send this observation's text/image to an external model?
+     * Blocks if the current package is protected or the screen contains sensitive content.
+     *
+     * @param observation The observation to check before uploading to a cloud VLM.
+     */
+    suspend fun checkUploadPermission(observation: ScreenObservation): PolicyCheckResult {
+        // Check package-level protection first
+        val pkgCheck = checkPackagePreObservation(observation.currentPackage)
+        if (pkgCheck.decision == PolicyDecision.DENY) return pkgCheck
+
+        // Also check screen text for sensitive content
+        val textToCheck = observation.ocrText ?: observation.nodeHierarchyText
+        return checkScreenAndPackage(observation.currentPackage, textToCheck)
+    }
+
+    /**
+     * Pre-dispatch action check: validate that we're allowed to act on the current context
+     * immediately before gesture/action dispatch (recheck at boundary).
+     */
+    fun checkActionDispatch(packageName: String?): PolicyCheckResult {
+        return checkPackagePreObservation(packageName)
+    }
+
+    /**
+     * Initializes default policy rules into Room DB if empty.
+     * Only called once during first run. Does not overwrite existing rules.
      */
     suspend fun initDefaultRulesIfEmpty() {
         val rules = database.policyRuleDao().getAllRules()

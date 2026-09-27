@@ -280,6 +280,11 @@ class SettingsActivity : AppCompatActivity() {
             preferenceManager.isBehaviorAgentEnabled = isChecked
         }
 
+        binding.switchBehaviorAnalytics.isChecked = preferenceManager.isBehaviorAnalyticsEnabled
+        binding.switchBehaviorAnalytics.setOnCheckedChangeListener { _, isChecked ->
+            preferenceManager.isBehaviorAnalyticsEnabled = isChecked
+        }
+
         val initialSteps = preferenceManager.agentMaxSteps
         binding.seekAgentMaxSteps.progress = (initialSteps - 3).coerceIn(0, 12)
         binding.tvAgentMaxStepsValue.text = "$initialSteps bước"
@@ -306,12 +311,12 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.btnClearAllHistory.setOnClickListener {
             AlertDialog.Builder(this)
-                .setTitle("Xóa toàn bộ lịch sử tác vụ")
-                .setMessage("Bạn có chắc chắn muốn xóa toàn bộ lịch sử các tác vụ tự động hóa và nhật ký hành động không?")
-                .setPositiveButton("Xóa toàn bộ") { _, _ ->
+                .setTitle("Xóa lịch sử tác vụ")
+                .setMessage("Xóa lịch sử tác vụ và nhật ký hành động (7 ngày qua). Thống kê hành vi và lệnh tùy chỉnh của bạn sẽ không bị ảnh hưởng.")
+                .setPositiveButton("Xóa lịch sử") { _, _ ->
                     lifecycleScope.launch {
-                        BehaviorAggregator(this@SettingsActivity).clearAllStats()
-                        Toast.makeText(this@SettingsActivity, "Đã xóa toàn bộ lịch sử tác vụ thành công!", Toast.LENGTH_SHORT).show()
+                        BehaviorAggregator(this@SettingsActivity).clearTaskHistory()
+                        Toast.makeText(this@SettingsActivity, "Đã xóa lịch sử tác vụ thành công!", Toast.LENGTH_SHORT).show()
                     }
                 }
                 .setNegativeButton("Hủy", null)

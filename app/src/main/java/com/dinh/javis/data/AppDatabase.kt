@@ -8,8 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * Cơ sở dữ liệu Room cục bộ của JAVIS (Phiên bản 2)
- * Lưu trữ hoàn toàn trên thiết bị (Local-first, không có máy chủ trung gian).
+ * JAVIS local Room database (Version 3).
+ *
+ * v1 → v2: Added task_profiles, ai_profiles, task_runs, action_logs, policy_rules, behavior_aggregates.
+ * v2 → v3: Added outcome columns to task_runs and behavior_aggregates;
+ *          added unique index on behavior_aggregates(taskKey, date).
+ *
+ * User commands, profiles, and settings are NEVER deleted by automatic cleanup.
+ * Partial migration failure is handled by fallback to destructive migration
+ * ONLY if the user explicitly enables it; default is strict migration.
  */
 @Database(
     entities = [
@@ -21,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PolicyRule::class,
         BehaviorAggregate::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // ── Migration 1 → 2 (preserved) ────────────────────────────────────
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -111,6 +119,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // ── Migration 2 → 3 ────────────────────────────────────────────────
+        // Adds outcome metadata columns and unique index on behavior_aggregates.
+        // New columns use DEFAULT 0 / DEFAULT 'general' for backward compatibility.
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // task_runs: add outcome metadata columns
+                db.execSQL("ALTER TABLE `task_runs` ADD COLUMN `verifiedActionCount` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `task_runs` ADD COLUMN `durationMs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `task_runs` ADD COLUMN `taskCategory` TEXT NOT NULL DEFAULT 'general'")
+
+                // behavior_aggregates: add separate outcome counts and analytics columns
+                db.execSQL("ALTER TABLE `behavior_aggregates` ADD COLUMN `cancelledCount` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `behavior_aggregates` ADD COLUMN `blockedCount` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `behavior_aggregates` ADD COLUMN `interruptedCount` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `behavior_aggregates` ADD COLUMN `totalDurationMs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `behavior_aggregates` ADD COLUMN `totalVerifiedActions` INTEGER NOT NULL DEFAULT 0")
+
+                // Deduplicate legacy behavior_aggregates before adding unique index (prevent SQLiteConstraintException)
+                db.execSQL("""
+                    DELETE FROM `behavior_aggregates`
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM `behavior_aggregates`
+                        GROUP BY `taskKey`, `date`
+                    )
+                """.trimIndent())
+
+                // Unique index on behavior_aggregates(taskKey, date) to prevent duplicate buckets
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_behavior_aggregates_taskKey_date` ON `behavior_aggregates` (`taskKey`, `date`)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -118,7 +158,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "javis_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

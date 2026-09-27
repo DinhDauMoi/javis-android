@@ -220,6 +220,17 @@
                     app:thumbTint="@color/primary"
                     app:trackTint="#4000E5FF" />
 
+                <!-- Cho phép thống kê hành vi cục bộ (Behavior Analytics) -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchBehaviorAnalytics"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Thống kê hành vi cục bộ (Analytics)"
+                    android:textColor="@color/text_primary"
+                    app:thumbTint="@color/primary"
+                    app:trackTint="#4000E5FF" />
+
                 <!-- Giới hạn số bước hành động tối đa -->
                 <LinearLayout
                     android:layout_width="match_parent"

@@ -70,6 +70,7 @@ class CommandExecutor(
             is Command.SendSms -> handleSendSms(command.contactName, command.messageBody)
             is Command.Custom -> handleCustomCommand(command)
             is Command.RunBehaviorAgent -> handleRunBehaviorAgent(command.goal)
+            is Command.FindProduct -> handleFindProduct(command.request)
             is Command.AnalyzeScreen -> handleAnalyzeScreen(command.prompt)
             is Command.AskAi -> handleAskAi(command.prompt)
             is Command.Unknown -> handleUnknown(command.rawText)
@@ -445,16 +446,28 @@ class CommandExecutor(
             }
 
             override fun onThought(thought: String) {
-                onLogMessage("Suy nghĩ: $thought", false, "AGENT")
+                // Show concise status summary only — not raw reasoning traces
+                onLogMessage(thought, false, "AGENT")
             }
 
             override fun onActionExecuted(action: String, details: String) {
                 onLogMessage("Thực hiện: $details", false, "HÀNH ĐỘNG")
             }
 
+            /**
+             * BA-01: Real user confirmation required.
+             * This callback MUST show actual UI to the user; onUserResponse must only be
+             * called after an explicit user choice (approve/deny). Auto-calling onUserResponse(true)
+             * is PROHIBITED and was the baseline blocker.
+             */
             override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {
-                onLogMessage("Cần xác nhận: $question", false, "XÁC NHẬN")
-                onUserResponse(true)
+                onLogMessage(
+                    "⚠️ XÁC NHẬN: $question\n[Nhấn nút Đồng ý/Từ chối để tiếp tục]",
+                    false,
+                    "XÁC NHẬN"
+                )
+                // Wire interactive UI overlay/dialog so ApprovalManager receives real user input
+                com.dinh.javis.service.FloatingBubbleService.showConfirmation(context, question, onUserResponse)
             }
 
             override fun onCompleted(success: Boolean, message: String) {
@@ -465,6 +478,36 @@ class CommandExecutor(
                 }
             }
         })
+    }
+
+    private fun handleFindProduct(request: com.dinh.javis.agent.shopping.ProductSearchRequest) {
+        onLogMessage("Bắt đầu tìm sản phẩm: \"${request.query}\" trên Shopee", false, "MUA SẮM")
+        scope.launch {
+            val skill = com.dinh.javis.agent.shopping.ShopeeShoppingSkill(context)
+            skill.execute(request, object : com.dinh.javis.agent.AgentCallback {
+                override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
+                    onLogMessage("Bước $stepIndex/$maxSteps: Đang xử lý...", false, "MUA SẮM")
+                }
+
+                override fun onThought(thought: String) {
+                    onLogMessage(thought, false, "MUA SẮM")
+                }
+
+                override fun onActionExecuted(action: String, details: String) {
+                    onLogMessage("Thao tác: $details", false, "HÀNH ĐỘNG")
+                }
+
+                override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {
+                    com.dinh.javis.service.FloatingBubbleService.showConfirmation(context, question, onUserResponse)
+                }
+
+                override fun onCompleted(success: Boolean, message: String) {
+                    scope.launch(Dispatchers.Main) {
+                        respondWithVoice(message, if (success) "HOÀN THÀNH" else "THÔNG BÁO")
+                    }
+                }
+            })
+        }
     }
 
     private fun handleUnknown(rawText: String) {
