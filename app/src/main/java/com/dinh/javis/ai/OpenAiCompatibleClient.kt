@@ -462,13 +462,20 @@ class OpenAiCompatibleClient(
                 .post(requestBody)
 
             val cleanKey = sanitizeInput(apiKey)
+            val maskedKey = if (cleanKey.length > 6) "...${cleanKey.takeLast(4)}" else "***"
             if (cleanKey.isNotBlank()) {
                 requestBuilder.header("Authorization", "Bearer $cleanKey")
             }
 
+            Log.i("JAVIS_TEST", "Sending HTTP POST -> $endpoint")
+            Log.i("JAVIS_TEST", "Model: $finalModel | Auth Header: Bearer $maskedKey")
+
             client.newCall(requestBuilder.build()).execute().use { response ->
                 val latency = System.currentTimeMillis() - startTime
                 val bodyString = response.body?.string() ?: ""
+                Log.i("JAVIS_TEST", "HTTP Response Code: ${response.code} | Latency: ${latency}ms")
+                Log.i("JAVIS_TEST", "HTTP Response Body: $bodyString")
+
                 if (response.isSuccessful) {
                     Result.success(Pair(latency, "Kết nối thành công! Độ trễ: ${latency}ms (Mô hình: $finalModel)"))
                 } else {
@@ -485,6 +492,7 @@ class OpenAiCompatibleClient(
                 }
             }
         } catch (e: Exception) {
+            Log.e("JAVIS_TEST", "HTTP Connection Exception: ${e.message}", e)
             Result.failure(RuntimeException("Lỗi kết nối: ${e.localizedMessage}"))
         }
     }

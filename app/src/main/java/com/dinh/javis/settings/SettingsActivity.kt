@@ -173,6 +173,9 @@ class SettingsActivity : AppCompatActivity() {
             }
             val key = keyInput.ifBlank { preferenceManager.openAiApiKey }
 
+            android.util.Log.i("JAVIS_TEST", "=== BUTTON TEST AI CONNECTION CLICKED ===")
+            android.util.Log.i("JAVIS_TEST", "URL: $url | Model: $model | Key Length: ${key.length}")
+
             val keyNotice = if (key.isNotBlank()) {
                 val maskedKey = if (key.length > 6) "...${key.takeLast(4)}" else "***"
                 "🔑 API Key: ĐÃ NẠP (${key.length} ký tự | $maskedKey)"
@@ -195,9 +198,11 @@ class SettingsActivity : AppCompatActivity() {
                 updateApiKeyHelperNote()
 
                 testResult.onSuccess { pair ->
+                    android.util.Log.i("JAVIS_TEST", "Test Result SUCCESS: ${pair.second}")
                     binding.tvConnectionResult.text = "$keyNotice\n✅ ${pair.second}"
                     binding.tvConnectionResult.setTextColor(getColor(R.color.status_green))
                 }.onFailure { err ->
+                    android.util.Log.e("JAVIS_TEST", "Test Result FAILURE: ${err.message}", err)
                     binding.tvConnectionResult.text = "$keyNotice\n❌ ${err.message}"
                     binding.tvConnectionResult.setTextColor(getColor(android.R.color.holo_red_light))
                 }
