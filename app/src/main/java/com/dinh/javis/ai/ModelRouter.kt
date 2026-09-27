@@ -59,7 +59,7 @@ class ModelRouter(private val context: Context) {
         val messages = listOf(
             ChatMessage(
                 role = "system",
-                content = "Bạn là JAVIS, trợ lý AI cá nhân tiếng Việt của anh Dinh trên điện thoại OPPO Find X8 Ultra. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để đọc bằng giọng nói. Tránh dùng ký hiệu định dạng markdown như **, #, *."
+                content = "Bạn là JAVIS, trợ lý AI cá nhân bằng tiếng Việt. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để trò chuyện. Tránh dùng ký hiệu định dạng markdown như **, #, *."
             ),
             ChatMessage(role = "user", content = prompt)
         )

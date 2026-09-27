@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
         binding.rvChat.adapter = chatAdapter
 
         appendMessage(
-            "Xin chào anh Dinh! Tôi là JAVIS. Gọi \"javis\" để đánh thức và ra lệnh rảnh tay khi xem TikTok!",
+            "Xin chào! Tôi là JAVIS. Gọi \"javis\" để đánh thức và ra lệnh rảnh tay khi xem TikTok!",
             isUser = false,
             tag = "JAVIS"
         )
