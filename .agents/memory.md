@@ -176,4 +176,63 @@
   - Automated verification complete (147/147 unit tests pass, debug APK cleanly assembled).
   - On-device acceptance pending manual execution of the A1–A10 checklist on the user's Android phone.
 
+## 10. Persistent Acceptance Review Reference (2026-09-28)
+
+- Detailed review: `plan/reject/fix-chat-to-phone-control-shopee-plan.md`, recreated on 2026-09-28 at the user's explicit request. This memory section remains the durable summary. Do not infer removal cause, responsible actor, tracking status or deletion commits if the file is later absent; do not recreate automatically without a task requiring it.
+- Latest documentation review directly inspected the APK (size/hash unchanged) and parsed 20 stored JUnit XML reports under `app/build/test-results/testDebugUnitTest`: 147 tests, 0 failures, 0 errors, 0 skipped. This confirms stored results, not a fresh test run or their correspondence to current source. Full on-phone acceptance remains pending in the reviewed records.
+- Current completion boundary: implementation and automated results are reported; real Shopee search, capture consent recovery, and OPPO rapid-tap/screen-transition acceptance remain pending recorded phone results. Earlier headings marked Completed describe reported software work, not full device acceptance.
+- APK existence, size (78,020,260 bytes), and SHA-256 `40933a35ed1427108c97599dc3a9c544f86a96b556f874d1ae7d4c9990d2a863` were directly verified in the preceding review. Indexed search missed generated artifacts; never conclude absence from that alone. Rebuild and rehash after source changes; an existing APK does not prove current-source freshness.
+- The historical 147-test report was not rerun during plan restoration. Do not convert prior reports into fresh verification claims.
+- ADB is optional for diagnostics/installation, never a normal application runtime prerequisite. Confirm actual OPPO model and whether the reported transition means lock/unlock, minimize/restore, or supported physical folding.
+- Preserve this review and update it with actual evidence. No full completion claim until required acceptance evidence exists. Do not repeatedly regenerate a missing plan instead of advancing validation.
+
+### Current Verdict and Evidence Limits
+
+**Implementation and APK exist; full end-user acceptance is not yet established by the evidence reviewed.** This is not a claim that the software is necessarily still broken. Previous Completed headings and test counts describe historical reports, not a fresh execution or proof of device behavior.
+
+- Direct filesystem inspection confirmed the primary APK and the size/hash above in the preceding review. Installability, signature/version metadata, and correspondence to the latest source were not independently revalidated in that check.
+- No Gradle command or phone test ran during this memory-only update.
+- Phone results have not been provided in the reviewed exchange. Do not claim no device evidence exists anywhere or that the exact bugs have never been tested.
+- Changes to other files do not establish who modified them. Preserve existing user work; do not revert deletions or create commits without authorization.
+
+### Concrete User Goals
+
+1. `find t-shurt 100k on shopee` routes through the actual executor to one read-only shopping task, not conversational AI. Normalize the narrow typo to `t-shirt`, interpret bare `100k` as an inclusive 100,000 VND item-price ceiling, and explain shipping exclusion in Vietnamese.
+2. Search uses verified field focus, exact normalized query, fresh query-associated results, observed eligible prices, and verified detail identity. Otherwise return a truthful bounded Vietnamese no-match/blocked/failure outcome. Never purchase, add to cart, or enter credentials.
+3. Rapid microphone taps plus lock/unlock or minimize/restore must not leave voice permanently unusable. Respect 350ms debounce, intentional cancellation, session tokens, listener cleanup, and TTS mutual exclusion. Physical folding is tested only if supported by the actual phone.
+
+### Remaining Agent Work and R1–R13 Evidence Map
+
+- R1–R3: Recheck existing focus, query, and result gates against fresh-screen/target evidence. Do not assume old defects still exist.
+- R4: Audit attempted-action accounting, deadline/policy/package checks and cancellation before physical dispatch, including retries.
+- R5: Preserve the real executor integration test; assert exactly one shopping dispatch and zero AI calls for the reported input.
+- R6–R7: Verify permission grant/denial, exactly-once pending-request resume, no process-death replay, exclusive ownership and cleanup after persistence failures.
+- R8: Verify observed price constraints, current page/frame binding and eligible detail identity; do not fabricate missing prices or ratings.
+- R9: Keep empty/punctuation-response coverage. Sanitization does not prove the historical cause of `.....`; runtime diagnosis requires evidence.
+- R10: Reproduce targeted tests, full suite and debug assembly; record actual counts/output and source revision context. Directly inspect generated APK size/hash and metadata.
+- R11: Record installed-APK shopping and permission outcomes on the affected phone.
+- R12: Maintain this review rather than cycling through unsupported completion/rejection assertions.
+- R13: Existing VoiceSessionCoordinator, HotwordManager integration and tests must be reviewed, not duplicated. Test actual lifecycle/microphone ownership, stale callbacks, retries and TTS recovery; coordinator-only tests do not prove OPPO behavior.
+
+Implement minimal fixes only for demonstrated remaining defects. If no code defect remains, report readiness for APK testing rather than inventing work. Run targeted tests first, then `./gradlew :app:testDebugUnitTest :app:assembleDebug` with bounded runtime. Preserve security, privacy, voice/audio and legacy-feature requirements in AGENTS.md.
+
+### Self-Contained Phone Handoff (No ADB Required)
+
+Provide the actual APK transfer location, current version/checksum, and normal Android installation instructions. Warn about signing conflicts and data loss before proposing uninstall. Confirm actual phone model, Android/ColorOS and Shopee version; do not infer foldability.
+
+| Test | User action | Acceptance |
+| --- | --- | --- |
+| A1 | Type the exact English shopping request | Actual clean-query Shopee search; eligible verified detail or truthful outcome, not chat-only text |
+| A2 | Type `tìm áo thun dưới 100k trên Shopee` | Strictly below 100,000 VND, shipping exclusion clear |
+| A3 | Disable accessibility, retry, then enable and retry | Actionable feedback, no blind control, later valid task works |
+| A4 | Deny capture when needed; separately grant | Safe denial and exactly-once valid resumption |
+| A5 | Cancel mid-search and start another task | No post-cancel actions; ownership released |
+| A6 | Rapid taps, then deliberate mic toggles outside debounce | Predictable state; next voice request works |
+| A7 | Lock/unlock and Home/restore separately | Voice usable without app restart; intentional stop remains stopped |
+| A8 | Repeat applicable tap/transition sequences at least 20 times with wake word on/off | No stuck UI, leaked microphone owner, or obsolete restart |
+| A9 | Interrupt TTS, request voice again with media playing | No self-trigger; focus released; listening requests no global focus |
+| A10 | Slow UI, network loss, login/CAPTCHA | Bounded actionable Vietnamese outcome, no crash or prohibited action |
+
+Record build/device, exact steps, visible status and outcome. Optional sanitized diagnostics may help; do not collect secrets, raw audio or unnecessary screen contents. If phone access is unavailable, complete safe code/build/test work and label **ready for APK testing / phone acceptance pending** where evidence supports it. Full completion requires recorded acceptance, not merely an unchanged APK or a clean Git tree.
+
 
