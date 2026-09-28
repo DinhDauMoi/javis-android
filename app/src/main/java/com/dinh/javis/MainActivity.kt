@@ -60,6 +60,18 @@ class MainActivity : AppCompatActivity() {
             }
             ContextCompat.startForegroundService(this, serviceIntent)
             Toast.makeText(this, "Đã kích hoạt chế độ Thị giác màn hình JAVIS", Toast.LENGTH_SHORT).show()
+
+            // Resume pending shopping request if held in memory waiting for consent
+            val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(this)
+            val pending = orchestrator.pendingShoppingRequest
+            if (pending != null) {
+                orchestrator.pendingShoppingRequest = null
+                orchestrator.executeShopping(pending)
+            }
+        } else {
+            // Consent denied or cancelled: clean up pending request without auto-approval
+            val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(this)
+            orchestrator.pendingShoppingRequest = null
         }
     }
 

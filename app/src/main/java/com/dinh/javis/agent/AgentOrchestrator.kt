@@ -56,6 +56,9 @@ class AgentOrchestrator(private val context: Context) {
     val isRunning: Boolean
         get() = activeRunRef.get() != null
 
+    @Volatile
+    var pendingShoppingRequest: com.dinh.javis.agent.shopping.ProductSearchRequest? = null
+
     /**
      * Cancels the currently active goal, if any.
      * The running coroutine will detect cancellation and finalize with CANCELLED outcome.
@@ -586,40 +589,46 @@ class AgentOrchestrator(private val context: Context) {
                 val endTime = System.currentTimeMillis()
                 val durationMs = endTime - startTime
                 withContext(Dispatchers.IO + NonCancellable) {
-                    if (activeRunRef.get()?.runId == runContext.runId) {
-                        val finalStatus = TaskRun.statusFromOutcome(outcome)
-                        database.taskRunDao().insertRun(
-                            TaskRun(
-                                runId = runContext.runId,
-                                profileId = runContext.profileId,
-                                taskGoal = taskRequest.goal.take(TaskRun.MAX_STORED_GOAL_LENGTH),
-                                taskCategory = taskRequest.taskCategory,
-                                startTime = startTime,
-                                endTime = endTime,
-                                status = finalStatus,
-                                stepCount = verifiedActionCount,
-                                verifiedActionCount = verifiedActionCount,
-                                durationMs = durationMs,
-                                failureReason = if (outcome != TaskOutcome.SUCCESS) finishMessage else null
-                            )
-                        )
-                        if (preferenceManager.isBehaviorAnalyticsEnabled) {
-                            behaviorAggregator.recordTaskMetric(
-                                runId = runContext.runId,
-                                taskCategory = taskRequest.taskCategory,
-                                event = TaskMetricEvent(
+                    try {
+                        if (activeRunRef.get()?.runId == runContext.runId) {
+                            val finalStatus = TaskRun.statusFromOutcome(outcome)
+                            database.taskRunDao().insertRun(
+                                TaskRun(
+                                    runId = runContext.runId,
+                                    profileId = runContext.profileId,
+                                    taskGoal = taskRequest.goal.take(TaskRun.MAX_STORED_GOAL_LENGTH),
                                     taskCategory = taskRequest.taskCategory,
-                                    outcome = outcome,
-                                    durationMs = durationMs,
+                                    startTime = startTime,
+                                    endTime = endTime,
+                                    status = finalStatus,
+                                    stepCount = verifiedActionCount,
                                     verifiedActionCount = verifiedActionCount,
-                                    retryCount = 0,
-                                    failureCategory = if (outcome == TaskOutcome.FAILED) categorizeFailure(finishMessage) else null
+                                    durationMs = durationMs,
+                                    failureReason = if (outcome != TaskOutcome.SUCCESS) finishMessage else null
                                 )
                             )
+                            if (preferenceManager.isBehaviorAnalyticsEnabled) {
+                                behaviorAggregator.recordTaskMetric(
+                                    runId = runContext.runId,
+                                    taskCategory = taskRequest.taskCategory,
+                                    event = TaskMetricEvent(
+                                        taskCategory = taskRequest.taskCategory,
+                                        outcome = outcome,
+                                        durationMs = durationMs,
+                                        verifiedActionCount = verifiedActionCount,
+                                        retryCount = 0,
+                                        failureCategory = if (outcome == TaskOutcome.FAILED) categorizeFailure(finishMessage) else null
+                                    )
+                                )
+                            }
+                            behaviorAggregator.runRetentionCleanup()
                         }
-                        behaviorAggregator.runRetentionCleanup()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error recording task metrics in finally block", e)
+                    } finally {
                         activeRunRef.compareAndSet(runContext, null)
                     }
+                    Unit
                 }
             }
         }

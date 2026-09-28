@@ -348,6 +348,54 @@ class JavisAccessibilityService : AccessibilityService() {
         return null
     }
 
+    /**
+     * Gets current text inside the focused or first editable node.
+     */
+    fun getEditableText(): String? {
+        val root = rootInActiveWindow ?: return null
+        val focusedNode = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: findFirstEditableNode(root)
+        return focusedNode?.text?.toString()
+    }
+
+    /**
+     * Finds the search input box or search trigger button on screen.
+     */
+    fun findSearchBox(): AccessibilityNodeInfo? {
+        val root = rootInActiveWindow ?: return null
+        val editable = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: findFirstEditableNode(root)
+        if (editable != null) return editable
+
+        return findNodeMatchingText(root, "tim kiem")
+            ?: findNodeMatchingText(root, "shopee")
+            ?: findNodeMatchingText(root, "search")
+    }
+
+    /**
+     * Attempts to trigger search submission via IME action or clicking search button.
+     */
+    fun performSearchAction(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val imeAction = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER
+            if (focused.actionList.contains(imeAction)) {
+                val imeSubmitted = focused.performAction(imeAction.id)
+                if (imeSubmitted) return true
+            }
+        }
+
+        return clickNodeByText("Tìm kiếm") || clickNodeByText("Search")
+    }
+
+    /**
+     * Verifies if a specific package is currently in the active foreground window.
+     */
+    fun isAppForeground(packageName: String): Boolean {
+        return getActivePackageName() == packageName
+    }
+
     companion object {
         private const val TAG = "JavisAccessibility"
 

@@ -39,6 +39,7 @@ sealed class Command {
     // 6. Hỏi AI, Thị giác máy tính & Tác vụ đa bước Behavior Agent
     data class RunBehaviorAgent(val goal: String) : Command()
     data class FindProduct(val request: com.dinh.javis.agent.shopping.ProductSearchRequest) : Command()
+    data class Clarify(val clarificationVi: String) : Command()
     data class AnalyzeScreen(val prompt: String) : Command()
     data class AskAi(val prompt: String) : Command()
     data class Unknown(val rawText: String) : Command()

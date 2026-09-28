@@ -106,4 +106,59 @@
   - `ActionValidator.kt`: Enforces strict rejection of transaction targets ("Mua ngay", "Thêm vào giỏ hàng", "Thanh toán", etc.).
   - `Command.kt` & `CommandParser.kt` & `CommandExecutor.kt`: Integrated `Command.FindProduct(request)` with precedence over broad app launch.
 
+---
+
+## 7. Chat-to-Phone Control for Shopee Search Fix (Completed 2026-09-28)
+
+### Problems Identified:
+- English shopping requests (`find t-shurt 100k on shopee`) failed to match `isShoppingIntent` because action detection only checked Vietnamese verbs (`tim`, `kiem`, `mua`), falling back to `AskAi` conversational text.
+- Missing standalone price removal left `100k` in query, and typo `t-shurt` was not normalized.
+- Empty product query invented a fake `tai nghe` fallback rather than requesting clarification.
+- Preflight blocked on `ScreenCaptureService.isCapturing()` before checking accessibility or launching Shopee.
+- Accessibility was checked only after launching Shopee; search actions were not verified.
+- AI provider errors/dots (e.g., `.....`) were spoken verbatim.
+
+### Solutions & Architectural Invariants:
+1. **Extended Shopping Intent & Token Boundaries (`ShoppingTaskParser.kt`):**
+   - Word-boundary English search forms (`find`, `search for`, `look for`, `buy`) + Shopee mentions.
+   - Preserved simple app launch (`open shopee` -> `Command.OpenApp`).
+   - Kept informational queries (`what is Shopee?`, `how do I find...`, `Shopee là gì?`, quoted queries) as `Command.AskAi`.
+   - Narrowly scoped typo normalization `t-shurt` -> `t-shirt`.
+   - Standalone price (`100k` -> 100_000L) with `INCLUSIVE_MAX` ceiling; strict `STRICTLY_BELOW` boundary for `dưới`/`under`.
+   - Empty product queries return `ShoppingParseResult.NeedsInput` -> `Command.Clarify`, prompting the user in Vietnamese rather than inventing a search query.
+2. **Vietnamese Request Explanation (`ProductSearchRequest.kt`):**
+   - Implemented `buildExplanationVi()`: “Đang tìm áo thun trên Shopee, giá sản phẩm không quá 100.000đ, chưa gồm phí vận chuyển.”
+3. **Pre-Launch Readiness & Tiered Recovery (`ShopeeShoppingSkill.kt`):**
+   - Checks accessibility service BEFORE launching Shopee (`TaskOutcome.BLOCKED`).
+   - Checks Shopee package installation BEFORE launch (`TaskOutcome.BLOCKED`).
+   - Replaced fixed delay with bounded polling for foreground.
+   - Tiered observation: Tier 1 Accessibility Tree by default; visual capture requested only when accessibility is unusable.
+   - Added `ShoppingAccessibilityBridge` seam for zero-flakiness testing without Robolectric.
+4. **Verified Search Execution Phases:**
+   - Search field resolution -> focus verification -> type verification -> submit verification -> candidate extraction -> ranking -> detail screen verification (identity tokens, structural indicators, non-grid confirmation, price check).
+   - Only increment `verifiedActionCount` upon verified postconditions.
+5. **Truthful Progress & Lifecycle Finalization (`AgentOrchestrator.kt`, `MainActivity.kt`):**
+   - Database operations in `finally` block wrapped with `try-catch` to guarantee `activeRunRef` is released even on DB failure.
+   - Pending shopping request memory holder (`pendingShoppingRequest`) in `AgentOrchestrator` resumed upon capture consent grant and cleared on denial.
+6. **AI Response Sanitization (`OpenAiClient.kt`):**
+   - Rejects empty or punctuation-only strings (e.g. `.....`) with clear Vietnamese feedback.
+
+---
+
+## 8. Rejection Review Remediation & Voice Resilience (Completed 2026-09-28)
+
+### Resolved Review Feedback Items:
+- **R1 (High — Verified Search Focus):** `ShopeeShoppingSkill.kt` strictly requires search input focus before typing. If polling times out unfocused, attempts one bounded recovery tap; halts with `FAILED` if focus remains unverified.
+- **R2 (High — Verified Query Input Before Submission):** `ShopeeShoppingSkill.kt` validates normalized query text (`isExpectedQueryText`) in the editable node. Halts immediately with `FAILED` if text verification fails; never submits unverified or stale text.
+- **R3 (High — Multi-Signal Result Readiness):** `ShopeeShoppingSkill.kt` replaces generic single-token checks with multi-signal verification (`Bộ lọc` + sort tabs: `Liên quan` / `Mới nhất` / `Bán chạy` / `Giá`). Distinguishes search suggestions, empty search (`NO_MATCH`), and CAPTCHA/login walls (`BLOCKED`).
+- **R4 (High — Action Budget Accounting):** `ShoppingResult.kt` separates `attemptedActions` from `executedActions`. All UI physical dispatches and retries count against `executionLimits.maxUiActions`, halting immediately with `BUDGET_EXHAUSTED` when the budget is spent.
+- **R5 (Medium — Real CommandExecutor Routing Dispatch):** Rewrote `CommandExecutorShoppingRoutingTest.kt` to exercise real `executor.execute(cmd)` via test seams (`shoppingDispatcher`, `aiDispatcher`, `voiceFeedback`). Verifies exactly 1 shopping call, 0 conversational AI calls, and 0 shopping calls for clarification / informational queries.
+- **R13 (High — OPPO Voice Stability Across Repeated Taps & Fold Transitions):**
+  - Created `VoiceSessionCoordinator.kt`: Generational session IDs (`currentSessionId`) discard stale callbacks, late retries, or post-stop audio restarts.
+  - Rapid tap debouncing: Mic button taps within 350ms are safely debounced.
+  - Toggle-to-cancel: Tapping the mic button while listening or starting cancels the active session cleanly and stops listening.
+  - Immediate recognizer cleanup: Detaches `RecognitionListener` before `destroy()` and handles `ERROR_RECOGNIZER_BUSY`/`ERROR_CLIENT` without deadlock or permanent busy state.
+  - Screen transition handling: Added `orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode` to `MainActivity` in `AndroidManifest.xml` to prevent destructive activity recreation during foldable screen transitions (OPPO Find N series).
+  - Added unit test suite `VoiceSessionCoordinatorTest.kt` (7/7 tests passing).
+- **Validation Results:** All 142 debug unit tests pass (`BUILD SUCCESSFUL in 29s`); debug APK built cleanly (`./gradlew :app:assembleDebug`).
 

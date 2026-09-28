@@ -46,8 +46,10 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
 
         // 2. Nhận diện lệnh mua sắm / tìm sản phẩm Shopee (Section 4)
         if (com.dinh.javis.agent.shopping.ShoppingTaskParser.isShoppingIntent(cleanInput)) {
-            val request = com.dinh.javis.agent.shopping.ShoppingTaskParser.parse(cleanInput)
-            return Command.FindProduct(request)
+            return when (val parseResult = com.dinh.javis.agent.shopping.ShoppingTaskParser.parse(cleanInput)) {
+                is com.dinh.javis.agent.shopping.ShoppingParseResult.Success -> Command.FindProduct(parseResult.request)
+                is com.dinh.javis.agent.shopping.ShoppingParseResult.NeedsInput -> Command.Clarify(parseResult.clarificationVi)
+            }
         }
 
         // 2. Điều khiển cử chỉ cuộn / lướt (TikTok, Facebook Reels, YouTube Shorts, v.v.)

@@ -36,11 +36,14 @@ import kotlinx.coroutines.withContext
  * - Quy ước chiều lướt: "lướt lên" = xem nội dung mới phía dưới (giống vuốt ngón tay từ dưới lên).
  */
 class CommandExecutor(
-    private val context: Context,
-    private val speaker: Speaker,
-    private val openAiClient: OpenAiClient,
+    private val context: Context?,
+    private val speaker: Speaker?,
+    private val openAiClient: OpenAiClient?,
     private val scope: CoroutineScope,
-    private val onLogMessage: (text: String, isUser: Boolean, tag: String?) -> Unit
+    private val onLogMessage: (text: String, isUser: Boolean, tag: String?) -> Unit,
+    private val shoppingDispatcher: ((com.dinh.javis.agent.shopping.ProductSearchRequest, com.dinh.javis.agent.AgentCallback) -> Unit)? = null,
+    private val aiDispatcher: (suspend (String) -> String)? = null,
+    private val voiceFeedback: ((String) -> Unit)? = null
 ) {
 
     private var activeTimer: CountDownTimer? = null
@@ -72,6 +75,7 @@ class CommandExecutor(
             is Command.Custom -> handleCustomCommand(command)
             is Command.RunBehaviorAgent -> handleRunBehaviorAgent(command.goal)
             is Command.FindProduct -> handleFindProduct(command.request)
+            is Command.Clarify -> handleClarify(command.clarificationVi)
             is Command.AnalyzeScreen -> handleAnalyzeScreen(command.prompt)
             is Command.AskAi -> handleAskAi(command.prompt)
             is Command.Unknown -> handleUnknown(command.rawText)
@@ -83,7 +87,7 @@ class CommandExecutor(
      */
     private fun respondWithBeep(logText: String, tag: String) {
         onLogMessage(logText, false, tag)
-        speaker.playAckBeep()
+        speaker?.playAckBeep()
     }
 
     /**
@@ -91,14 +95,19 @@ class CommandExecutor(
      */
     private fun respondWithVoice(text: String, tag: String? = null) {
         onLogMessage(text, false, tag)
-        speaker.speak(text)
+        if (voiceFeedback != null) {
+            voiceFeedback.invoke(text)
+        } else {
+            speaker?.speak(text)
+        }
     }
 
     // =========================================================================
     // 1. MỞ ỨNG DỤNG (YOUTUBE, TIKTOK, V.V.)
     // =========================================================================
     private fun handleOpenApp(appName: String) {
-        val (success, appTitle) = AppHelper.openAppByName(context, appName)
+        val ctx = context ?: return
+        val (success, appTitle) = AppHelper.openAppByName(ctx, appName)
         if (success) {
             respondWithBeep("Đang mở $appTitle", "MỞ APP")
         } else {
@@ -118,7 +127,7 @@ class CommandExecutor(
         val service = JavisAccessibilityService.instance
         if (service == null) {
             respondWithVoice("Bạn chưa bật Trợ năng cho JAVIS", "TRỢ NĂNG")
-            PermissionHelper.openAccessibilitySettings(context)
+            context?.let { PermissionHelper.openAccessibilitySettings(it) }
             return null
         }
         return service
@@ -181,7 +190,8 @@ class CommandExecutor(
     // 3. ĐIỀU KHIỂN ÂM LƯỢNG (LOA MEDIA) & PHẦN CỨNG
     // =========================================================================
     private fun handleVolume(action: Command.VolumeAction) {
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val ctx = context ?: return
+        val audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         when (action) {
             Command.VolumeAction.UP -> {
                 audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
@@ -203,17 +213,18 @@ class CommandExecutor(
     }
 
     private fun handleWifi(enable: Boolean) {
+        val ctx = context ?: return
         val actionText = if (enable) "bật" else "tắt"
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val intent = Intent(Settings.Panel.ACTION_WIFI).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                context.startActivity(intent)
+                ctx.startActivity(intent)
                 respondWithBeep("Đã mở bảng điều khiển Wi-Fi", "WIFI")
             } else {
                 @Suppress("DEPRECATION")
-                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val wifiManager = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 @Suppress("DEPRECATION")
                 wifiManager?.isWifiEnabled = enable
                 respondWithBeep("Đã $actionText Wi-Fi", "WIFI")
@@ -224,16 +235,17 @@ class CommandExecutor(
     }
 
     private fun handleBluetooth(enable: Boolean) {
+        val ctx = context ?: return
         val actionText = if (enable) "bật" else "tắt"
         try {
-            val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            val bluetoothManager = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter = bluetoothManager?.adapter
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                context.startActivity(intent)
+                ctx.startActivity(intent)
                 respondWithBeep("Đã mở cài đặt Bluetooth", "BLUETOOTH")
             } else {
                 @Suppress("DEPRECATION")
@@ -244,14 +256,15 @@ class CommandExecutor(
             val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            context.startActivity(intent)
+            ctx.startActivity(intent)
             respondWithBeep("Đã mở cài đặt Bluetooth", "BLUETOOTH")
         }
     }
 
     private fun handleTorch(enable: Boolean) {
+        val ctx = context ?: return
         try {
-            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
+            val cameraManager = ctx.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
             val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return
             cameraManager.setTorchMode(cameraId, enable)
             respondWithBeep(if (enable) "Đã bật đèn pin" else "Đã tắt đèn pin", "ĐÈN PIN")
@@ -268,15 +281,16 @@ class CommandExecutor(
             return
         }
 
+        val ctx = context ?: return
         // Fallback: Device Admin
-        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-        val adminComponent = ComponentName(context, JavisDeviceAdminReceiver::class.java)
+        val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+        val adminComponent = ComponentName(ctx, JavisDeviceAdminReceiver::class.java)
         if (dpm != null && dpm.isAdminActive(adminComponent)) {
             respondWithBeep("Đang khóa màn hình", "KHÓA MÁY")
             dpm.lockNow()
         } else {
             respondWithVoice("Bạn chưa bật quyền Trợ năng cho JAVIS để khóa màn hình.", "KHÓA MÁY")
-            PermissionHelper.openAccessibilitySettings(context)
+            PermissionHelper.openAccessibilitySettings(ctx)
         }
     }
 
@@ -300,15 +314,16 @@ class CommandExecutor(
         }
 
         respondWithVoice("Đang mở hộp thoại cấp quyền quan sát màn hình...", "THỊ GIÁC")
+        val ctx = context ?: return
 
-        if (context is com.dinh.javis.MainActivity) {
-            context.requestScreenCaptureConsent()
+        if (ctx is com.dinh.javis.MainActivity) {
+            ctx.requestScreenCaptureConsent()
         } else {
-            val intent = Intent(context, com.dinh.javis.MainActivity::class.java).apply {
+            val intent = Intent(ctx, com.dinh.javis.MainActivity::class.java).apply {
                 action = "com.dinh.javis.ACTION_REQUEST_SCREEN_CAPTURE"
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
-            context.startActivity(intent)
+            ctx.startActivity(intent)
         }
     }
 
@@ -334,13 +349,13 @@ class CommandExecutor(
 
             override fun onFinish() {
                 val alertMsg = "Đã hết thời gian hẹn giờ $label rồi bạn ơi!"
-                onLogMessage(alertMsg, false, "HẾT GIỜ")
-                speaker.speak(alertMsg)
+                respondWithVoice(alertMsg, "HẾT GIỜ")
             }
         }.start()
     }
 
     private fun handleSetAlarm(hour: Int, minute: Int) {
+        val ctx = context ?: return
         try {
             val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                 putExtra(AlarmClock.EXTRA_HOUR, hour)
@@ -349,7 +364,7 @@ class CommandExecutor(
                 putExtra(AlarmClock.EXTRA_SKIP_UI, false)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            context.startActivity(intent)
+            ctx.startActivity(intent)
             respondWithVoice("Đã mở đặt báo thức lúc $hour giờ $minute phút.", "BÁO THỨC")
         } catch (e: Exception) {
             respondWithVoice("Không thể đặt báo thức tự động: ${e.localizedMessage}", "LỖI")
@@ -357,7 +372,8 @@ class CommandExecutor(
     }
 
     private fun handleMakeCall(contactName: String) {
-        val contact = AppHelper.findContactByName(context, contactName)
+        val ctx = context ?: return
+        val contact = AppHelper.findContactByName(ctx, contactName)
         if (contact == null) {
             respondWithVoice("Không tìm thấy số điện thoại của \"$contactName\" trong danh bạ.", "CUỘC GỌI")
             return
@@ -372,18 +388,19 @@ class CommandExecutor(
         }
 
         try {
-            context.startActivity(callIntent)
+            ctx.startActivity(callIntent)
         } catch (e: SecurityException) {
             val dialIntent = Intent(Intent.ACTION_DIAL).apply {
                 data = Uri.parse("tel:$number")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            context.startActivity(dialIntent)
+            ctx.startActivity(dialIntent)
         }
     }
 
     private fun handleSendSms(contactName: String, messageBody: String) {
-        val contact = AppHelper.findContactByName(context, contactName)
+        val ctx = context ?: return
+        val contact = AppHelper.findContactByName(ctx, contactName)
         val phoneNumber = contact?.second ?: ""
 
         val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
@@ -393,7 +410,7 @@ class CommandExecutor(
         }
 
         try {
-            context.startActivity(smsIntent)
+            ctx.startActivity(smsIntent)
             val toWhom = contact?.first ?: contactName
             respondWithVoice("Đã mở tin nhắn gửi cho $toWhom với nội dung soạn sẵn.", "TIN NHẮN")
         } catch (e: Exception) {
@@ -407,7 +424,8 @@ class CommandExecutor(
     private fun handleCustomCommand(custom: Command.Custom) {
         when (custom.actionType) {
             CustomCommand.ACTION_OPEN_APP -> {
-                val (ok, appName) = AppHelper.openAppByName(context, custom.targetParam)
+                val ctx = context ?: return
+                val (ok, appName) = AppHelper.openAppByName(ctx, custom.targetParam)
                 if (ok) respondWithBeep("Đang mở $appName theo lệnh tùy chỉnh", "LỆNH TÙY CHỈNH")
                 else respondWithVoice("Chưa cài ${custom.targetParam} trên máy này", "LỖI")
             }
@@ -415,13 +433,14 @@ class CommandExecutor(
             CustomCommand.ACTION_SCROLL_DOWN -> handleScrollDown()
             CustomCommand.ACTION_CLICK_TEXT -> handleClickButton(custom.targetParam)
             CustomCommand.ACTION_OPEN_URL -> {
+                val ctx = context ?: return
                 val url = if (!custom.targetParam.startsWith("http://") && !custom.targetParam.startsWith("https://")) {
                     "https://${custom.targetParam}"
                 } else custom.targetParam
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                context.startActivity(intent)
+                ctx.startActivity(intent)
                 respondWithBeep("Đang mở liên kết trang web", "MỞ LIÊN KẾT")
             }
         }
@@ -430,7 +449,11 @@ class CommandExecutor(
     private fun handleAskAi(prompt: String) {
         onLogMessage("Đang hỏi AI...", false, "AI...")
         scope.launch {
-            val response = openAiClient.askAi(prompt)
+            val response = if (aiDispatcher != null) {
+                aiDispatcher.invoke(prompt)
+            } else {
+                openAiClient?.askAi(prompt) ?: ""
+            }
             withContext(Dispatchers.Main) {
                 respondWithVoice(response, "AI")
             }
@@ -438,10 +461,11 @@ class CommandExecutor(
     }
 
     private fun handleAnalyzeScreen(prompt: String) {
+        val ctx = context ?: return
         onLogMessage("Đang quan sát và phân tích màn hình...", false, "THỊ GIÁC")
         scope.launch {
-            val observationEngine = com.dinh.javis.vision.ScreenObservationEngine(context)
-            val modelRouter = com.dinh.javis.ai.ModelRouter.getInstance(context)
+            val observationEngine = com.dinh.javis.vision.ScreenObservationEngine(ctx)
+            val modelRouter = com.dinh.javis.ai.ModelRouter.getInstance(ctx)
             val obsResult = observationEngine.observeScreen(captureVisual = true)
             val bitmap = obsResult.bitmap
             val nodeContext = obsResult.observation.nodeHierarchyText
@@ -461,8 +485,9 @@ class CommandExecutor(
     }
 
     private fun handleRunBehaviorAgent(goal: String) {
+        val ctx = context ?: return
         onLogMessage("Bắt đầu tác vụ tự động: \"$goal\"", false, "AGENT")
-        val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(context)
+        val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(ctx)
         orchestrator.executeGoal(goal, object : com.dinh.javis.agent.AgentCallback {
             override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
                 onLogMessage("Bước $stepIndex/$maxSteps: Đang phân tích...", false, "AGENT")
@@ -490,7 +515,7 @@ class CommandExecutor(
                     "XÁC NHẬN"
                 )
                 // Wire interactive UI overlay/dialog so ApprovalManager receives real user input
-                com.dinh.javis.service.FloatingBubbleService.showConfirmation(context, question, onUserResponse)
+                com.dinh.javis.service.FloatingBubbleService.showConfirmation(ctx, question, onUserResponse)
             }
 
             override fun onCompleted(success: Boolean, message: String) {
@@ -504,34 +529,46 @@ class CommandExecutor(
     }
 
     private fun handleFindProduct(request: com.dinh.javis.agent.shopping.ProductSearchRequest) {
-        onLogMessage("Bắt đầu tìm sản phẩm: \"${request.query}\" trên Shopee", false, "MUA SẮM")
-        val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(context)
-        orchestrator.executeShopping(
-            request = request,
-            legacyCallback = object : com.dinh.javis.agent.AgentCallback {
-                override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
-                    onLogMessage("Bước $stepIndex/$maxSteps: Đang xử lý...", false, "MUA SẮM")
-                }
+        val explanation = request.buildExplanationVi()
+        onLogMessage(explanation, false, "MUA SẮM")
 
-                override fun onThought(thought: String) {
-                    onLogMessage(thought, false, "MUA SẮM")
-                }
+        val callback = object : com.dinh.javis.agent.AgentCallback {
+            override fun onStepStarted(stepIndex: Int, maxSteps: Int) {
+                onLogMessage("Bước $stepIndex/$maxSteps: Đang xử lý...", false, "MUA SẮM")
+            }
 
-                override fun onActionExecuted(action: String, details: String) {
-                    onLogMessage("Thao tác: $details", false, "HÀNH ĐỘNG")
-                }
+            override fun onThought(thought: String) {
+                onLogMessage(thought, false, "MUA SẮM")
+            }
 
-                override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {
-                    com.dinh.javis.service.FloatingBubbleService.showConfirmation(context, question, onUserResponse)
-                }
+            override fun onActionExecuted(action: String, details: String) {
+                onLogMessage("Thao tác: $details", false, "HÀNH ĐỘNG")
+            }
 
-                override fun onCompleted(success: Boolean, message: String) {
-                    scope.launch(Dispatchers.Main) {
-                        respondWithVoice(message, if (success) "HOÀN THÀNH" else "THÔNG BÁO")
-                    }
+            override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {
+                context?.let { com.dinh.javis.service.FloatingBubbleService.showConfirmation(it, question, onUserResponse) }
+            }
+
+            override fun onCompleted(success: Boolean, message: String) {
+                scope.launch(Dispatchers.Main) {
+                    respondWithVoice(message, if (success) "HOÀN THÀNH" else "THÔNG BÁO")
                 }
             }
-        )
+        }
+
+        if (shoppingDispatcher != null) {
+            shoppingDispatcher.invoke(request, callback)
+        } else if (context != null) {
+            val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(context)
+            orchestrator.executeShopping(
+                request = request,
+                legacyCallback = callback
+            )
+        }
+    }
+
+    private fun handleClarify(message: String) {
+        respondWithVoice(message, "CẦN THÊM THÔNG TIN")
     }
 
     private fun handleUnknown(rawText: String) {

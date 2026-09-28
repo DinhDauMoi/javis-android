@@ -1,7 +1,10 @@
 package com.dinh.javis.agent.shopping
 
 import android.graphics.Rect
+import com.dinh.javis.agent.AgentCallback
+import com.dinh.javis.agent.TaskOutcome
 import com.dinh.javis.vision.OcrBlock
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +46,173 @@ class ShopeeShoppingSkillTest {
         )
     }
 
+    private class FakeAccessibilityBridge(
+        var available: Boolean = true,
+        var appForeground: Boolean = true,
+        var activePackage: String? = "com.shopee.vn",
+        var hierarchy: String = "[#1] View bounds=(0,0,1080,2400) center=(540,1200)",
+        var searchBoxClicked: Boolean = true,
+        var textClicked: Boolean = true,
+        var typed: Boolean = true,
+        var currentEditableText: String? = null,
+        var searchFocused: Boolean = true,
+        var searchSubmitted: Boolean = true,
+        var typeCalled: Boolean = false,
+        var searchSubmittedCalled: Boolean = false,
+        var scrollForwardCalled: Boolean = false,
+        var overrideTextOnType: Boolean = true
+    ) : ShoppingAccessibilityBridge {
+        override fun isAvailable(): Boolean = available
+        override fun isAppForeground(packageName: String): Boolean = appForeground
+        override fun getActivePackageName(): String? = activePackage
+        override fun dumpNodeHierarchy(maxNodes: Int): String = hierarchy
+        override fun clickSearchBox(): Boolean = searchBoxClicked
+        override fun clickNodeByText(targetText: String): Boolean = textClicked
+        override fun tapAt(x: Float, y: Float): Boolean = true
+        override fun typeText(text: String): Boolean {
+            typeCalled = true
+            if (overrideTextOnType) {
+                currentEditableText = text
+            }
+            return typed
+        }
+        override fun getEditableText(): String? = currentEditableText
+        override fun isSearchFocused(): Boolean = searchFocused
+        override fun performSearchAction(): Boolean {
+            searchSubmittedCalled = true
+            return searchSubmitted
+        }
+        override fun scrollForward(): Boolean {
+            scrollForwardCalled = true
+            return true
+        }
+    }
+
+    @Test
+    fun execute_missingAccessibility_blocksWithActionableVietnameseMessage() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(available = false)
+        val skillWithNoA11y = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+        var completedCalled = false
+        var completedSuccess = true
+        var completedMsg = ""
+
+        val result = skillWithNoA11y.execute(
+            request = request,
+            callback = object : AgentCallback {
+                override fun onStepStarted(stepIndex: Int, maxSteps: Int) {}
+                override fun onThought(thought: String) {}
+                override fun onActionExecuted(action: String, details: String) {}
+                override fun onConfirmationRequired(question: String, onUserResponse: (Boolean) -> Unit) {}
+                override fun onCompleted(success: Boolean, message: String) {
+                    completedCalled = true
+                    completedSuccess = success
+                    completedMsg = message
+                }
+            }
+        )
+
+        assertEquals(TaskOutcome.BLOCKED, result.outcome)
+        assertTrue(result.summaryVi.contains("quyền Trợ năng"))
+        assertTrue(completedCalled)
+        assertFalse(completedSuccess)
+        assertEquals(result.summaryVi, completedMsg)
+    }
+
+    @Test
+    fun execute_shopeeNotInstalled_blocksWithActionableMessage() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(available = true)
+        val skillMissingShopee = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(false, null) }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+
+        val result = skillMissingShopee.execute(request)
+        assertEquals(TaskOutcome.BLOCKED, result.outcome)
+        assertTrue(result.summaryVi.contains("Chưa cài đặt ứng dụng Shopee"))
+    }
+
+    @Test
+    fun execute_delayedForegroundTimeout_terminatesCleanly() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(available = true, appForeground = false)
+        val skillTimeout = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(
+            query = "t-shirt",
+            maxPrice = 100_000L,
+            executionLimits = ShoppingExecutionLimits(maxTimeMs = 500L)
+        )
+
+        val result = skillTimeout.execute(request)
+        assertEquals(TaskOutcome.BLOCKED, result.outcome)
+        assertTrue(result.summaryVi.contains("Quá thời gian chờ"))
+    }
+
+    @Test
+    fun execute_emptyNodeTreeAndNoCapture_blocksWithCapturePermissionGuidance() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            activePackage = "com.shopee.vn",
+            hierarchy = ""
+        )
+        val skillNoCapture = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            captureServiceChecker = { false },
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+
+        val result = skillNoCapture.execute(request)
+        assertEquals(TaskOutcome.BLOCKED, result.outcome)
+        assertTrue(result.summaryVi.contains("Bật dịch vụ màn hình"))
+    }
+
+    @Test
+    fun budgetBoundary_strictlyBelow_excludesExactBudgetAmount() {
+        val candidates = listOf(
+            ProductCandidate(
+                title = "Áo thun nam basic 100k",
+                price = 100_000L,
+                checkpointX = 100f,
+                checkpointY = 200f
+            ),
+            ProductCandidate(
+                title = "Áo thun nam rẻ 95k",
+                price = 95_000L,
+                checkpointX = 100f,
+                checkpointY = 400f
+            )
+        )
+
+        val requestStrict = ProductSearchRequest(
+            query = "áo thun",
+            maxPrice = 100_000L,
+            budgetBoundary = BudgetBoundary.STRICTLY_BELOW
+        )
+
+        val rankedStrict = ranker.rank(candidates, requestStrict)
+        val eligibleStrict = rankedStrict.filter { it.isEligible }
+        assertEquals(1, eligibleStrict.size)
+        assertEquals("Áo thun nam rẻ 95k", eligibleStrict[0].candidate.title)
+
+        val requestInclusive = ProductSearchRequest(
+            query = "áo thun",
+            maxPrice = 100_000L,
+            budgetBoundary = BudgetBoundary.INCLUSIVE_MAX
+        )
+
+        val rankedInclusive = ranker.rank(candidates, requestInclusive)
+        val eligibleInclusive = rankedInclusive.filter { it.isEligible }
+        assertEquals(2, eligibleInclusive.size)
+    }
+
     @Test
     fun extractProductCandidates_parsesWithoutFabricatingRatingsOrReviews() {
         val nodeDump = """
@@ -71,20 +241,16 @@ class ShopeeShoppingSkillTest {
 
     @Test
     fun extractCandidatesFromOcr_extractsProductCardsWithCheckpointsWhenNodeDumpIsEmpty() {
-        // Simulates Canvas / WebView rendered Shopee search grid with empty accessibility node text
         val ocrBlocks = listOf(
-            // Header / UI buttons (should be filtered out)
             createOcrBlock("Tìm kiếm", 100f, 90f, 400f, 160f),
             createOcrBlock("Bộ lọc", 900f, 90f, 1050f, 160f),
 
-            // Product 1 Card
             createOcrBlock("Mall", 40f, 200f, 120f, 240f),
             createOcrBlock("Tai nghe Chụp Tai Bluetooth Sony WH-1000XM4 Chính Hãng", 40f, 250f, 500f, 400f),
             createOcrBlock("₫5.990.000", 40f, 410f, 250f, 460f),
             createOcrBlock("Đã bán 3,2k", 260f, 410f, 450f, 460f),
             createOcrBlock("4.9", 460f, 410f, 500f, 460f),
 
-            // Product 2 Card
             createOcrBlock("Tai nghe nhét tai Baseus Bowie E3 không dây", 550f, 250f, 1020f, 400f),
             createOcrBlock("350.000 đ", 550f, 410f, 750f, 460f),
             createOcrBlock("Đã bán 850", 760f, 410f, 950f, 460f)
@@ -93,7 +259,6 @@ class ShopeeShoppingSkillTest {
         val candidates = skill.extractCandidatesFromOcr(ocrBlocks)
         assertEquals(2, candidates.size)
 
-        // Product 1
         val item1 = candidates[0]
         assertEquals("Tai nghe Chụp Tai Bluetooth Sony WH-1000XM4 Chính Hãng", item1.title)
         assertEquals(5_990_000L, item1.price)
@@ -105,7 +270,6 @@ class ShopeeShoppingSkillTest {
         assertEquals(325f, item1.checkpointY)
         assertEquals("ocr", item1.source)
 
-        // Product 2
         val item2 = candidates[1]
         assertEquals("Tai nghe nhét tai Baseus Bowie E3 không dây", item2.title)
         assertEquals(350_000L, item2.price)
@@ -142,5 +306,162 @@ class ShopeeShoppingSkillTest {
         assertEquals("Tai nghe Bluetooth giá rẻ A", best!!.candidate.title)
         assertEquals(190_000L, best.candidate.price)
         assertNull(best.candidate.rating)
+    }
+
+    @Test
+    fun execute_searchFieldNotFocused_neverTypesOrSubmits_returnsFailed() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = false, // Never focused!
+            hierarchy = "[#1] View bounds=(0,0,1080,2400) center=(540,1200)"
+        )
+        val skillUnfocused = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(
+            query = "t-shirt",
+            maxPrice = 100_000L,
+            executionLimits = ShoppingExecutionLimits(maxTimeMs = 5000L)
+        )
+
+        val result = skillUnfocused.execute(request)
+        assertEquals(TaskOutcome.FAILED, result.outcome)
+        assertTrue(result.summaryVi.contains("Không thể tìm hoặc kích hoạt ô tìm kiếm"))
+        assertFalse("Must never attempt typing when search field is not focused (R1)", fakeBridge.typeCalled)
+        assertFalse("Must never submit when search field is not focused (R1)", fakeBridge.searchSubmittedCalled)
+    }
+
+    @Test
+    fun execute_typingVerificationFails_neverSubmits_returnsFailed() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            overrideTextOnType = false, // Keeps editable text empty or stale
+            currentEditableText = "unrelated old query",
+            hierarchy = "[#1] View bounds=(0,0,1080,2400) center=(540,1200)"
+        )
+        val skillTypingFailed = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(
+            query = "t-shirt",
+            maxPrice = 100_000L,
+            executionLimits = ShoppingExecutionLimits(maxTimeMs = 5000L)
+        )
+
+        val result = skillTypingFailed.execute(request)
+        assertEquals(TaskOutcome.FAILED, result.outcome)
+        assertTrue(result.summaryVi.contains("Không thể xác nhận đã nhập đúng từ khóa"))
+        assertTrue("Typing must have been attempted", fakeBridge.typeCalled)
+        assertFalse("Must never submit when typed query cannot be verified (R2)", fakeBridge.searchSubmittedCalled)
+    }
+
+    @Test
+    fun execute_resultScreenOnlyHasGenericPrice_neverExtractsCandidates_returnsFailed() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            typed = true,
+            currentEditableText = "t-shirt",
+            // Stale screen with only "Giá" and no "Bộ lọc" / sort tabs
+            hierarchy = """
+                [#1] View bounds=(0,0,1080,2400)
+                [#2] TextView text="Giá tốt hôm nay" bounds=(50,300,500,450)
+            """.trimIndent()
+        )
+        val skillStaleScreen = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(
+            query = "t-shirt",
+            maxPrice = 100_000L,
+            executionLimits = ShoppingExecutionLimits(maxTimeMs = 8000L)
+        )
+
+        val result = skillStaleScreen.execute(request)
+        assertEquals(TaskOutcome.FAILED, result.outcome)
+        assertTrue(result.summaryVi.contains("Hết thời gian chờ tải kết quả tìm kiếm"))
+        assertTrue(result.inspectedCandidates.isEmpty())
+    }
+
+    @Test
+    fun execute_resultScreenBlockedByCaptchaOrLogin_returnsBlocked() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            typed = true,
+            currentEditableText = "t-shirt",
+            hierarchy = """
+                [#1] View bounds=(0,0,1080,2400)
+                [#2] TextView text="Xác minh bảo mật để tiếp tục" bounds=(50,300,500,450)
+                [#3] Button text="Mã xác thực" bounds=(50,500,500,600)
+            """.trimIndent()
+        )
+        val skillCaptcha = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+
+        val result = skillCaptcha.execute(request)
+        assertEquals(TaskOutcome.BLOCKED, result.outcome)
+        assertTrue(result.summaryVi.contains("xác minh bảo mật") || result.summaryVi.contains("đăng nhập"))
+    }
+
+    @Test
+    fun execute_resultScreenShowsEmptyResults_returnsNoMatch() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            typed = true,
+            currentEditableText = "t-shirt",
+            hierarchy = """
+                [#1] View bounds=(0,0,1080,2400)
+                [#2] TextView text="Rất tiếc, không tìm thấy kết quả nào" bounds=(50,300,500,450)
+            """.trimIndent()
+        )
+        val skillEmpty = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+
+        val result = skillEmpty.execute(request)
+        assertEquals(TaskOutcome.NO_MATCH, result.outcome)
+        assertTrue(result.summaryVi.contains("Không tìm thấy kết quả nào"))
+    }
+
+    @Test
+    fun execute_maxPhysicalActionsExhausted_terminatesWithBudgetExhausted() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            typed = true,
+            currentEditableText = "t-shirt"
+        )
+        val skillExhausted = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        // Set maxUiActions to 1, so after clicking search box, action budget is exhausted
+        val request = ProductSearchRequest(
+            query = "t-shirt",
+            maxPrice = 100_000L,
+            executionLimits = ShoppingExecutionLimits(maxUiActions = 1)
+        )
+
+        val result = skillExhausted.execute(request)
+        assertEquals(TaskOutcome.BUDGET_EXHAUSTED, result.outcome)
+        assertTrue(result.summaryVi.contains("Đã vượt quá số bước thao tác tối đa"))
+        assertFalse("Typing must not be attempted after budget exhaustion (R4)", fakeBridge.typeCalled)
     }
 }

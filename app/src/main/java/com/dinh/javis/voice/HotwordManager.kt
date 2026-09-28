@@ -54,6 +54,10 @@ class HotwordManager(
     @Volatile private var isListeningCommand = false       // Currently running SpeechRecognizer listening for single command
     @Volatile private var isPausedForTts = false          // Temporarily paused while TTS is speaking
 
+    // Session coordinator to manage generational session IDs, debouncing, and cancellation (R13)
+    private val sessionCoordinator = VoiceSessionCoordinator(debounceIntervalMs = 350L)
+    private var pendingCommandStartRunnable: Runnable? = null
+
     // Retry counter for speech command recognition when no speech is detected (max 1 retry)
     private var commandRetryCount = 0
     private val MAX_COMMAND_RETRIES = 1
@@ -115,7 +119,10 @@ class HotwordManager(
      */
     fun stop() {
         isRunning = false
-        mainHandler.removeCallbacks(commandTimeoutRunnable)
+        sessionCoordinator.invalidateSession()
+        pendingCommandStartRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingCommandStartRunnable = null
+        mainHandler.removeCallbacksAndMessages(null)
         glowOverlayManager.hide()
 
         // Stop and release OpenWakeWord engine
@@ -140,23 +147,52 @@ class HotwordManager(
 
     /**
      * Triggers one-shot voice command listening manually (e.g., via Mic button or Tile).
+     * Serialized, debounced, and idempotent: rapid taps do not create concurrent recognizers.
+     * Tapping while already listening cancels the active session cleanly (R13).
      */
     fun triggerOneShotCommand() {
-        if (!isRunning) {
-            start()
-        }
-        tWakeDetected = System.currentTimeMillis()
-        tBeepStarted = tWakeDetected
-        pauseHotwordDetector()
-        speaker.playWakeBeep()
-        onStatusChange("Đang kích hoạt...", true, false)
-        glowOverlayManager.show()
-        mainHandler.postDelayed({
-            if (isRunning && !isListeningCommand && !isPausedForTts) {
-                commandRetryCount = 0
-                startCommandListening()
+        val decision = sessionCoordinator.onManualTrigger(isListeningCommand || pendingCommandStartRunnable != null)
+        when (decision) {
+            is VoiceSessionCoordinator.TriggerDecision.Debounced -> {
+                Log.d(TAG, "Debounce rapid triggerOneShotCommand tap")
+                return
             }
-        }, 420L)
+            is VoiceSessionCoordinator.TriggerDecision.CancelActive -> {
+                Log.i(TAG, "User tapped mic button while listening/starting -> Cancelling voice session")
+                pendingCommandStartRunnable?.let { mainHandler.removeCallbacks(it) }
+                pendingCommandStartRunnable = null
+                cancelCommandListening()
+                destroySpeechRecognizer()
+                onStatusChange("Đã dừng nghe", false, false)
+                if (isRunning && !isPausedForTts) {
+                    resumeHotwordDetector(delayMs = 300)
+                }
+                return
+            }
+            is VoiceSessionCoordinator.TriggerDecision.StartNew -> {
+                val sessionId = decision.newSessionId
+                if (!isRunning) {
+                    start()
+                }
+                tWakeDetected = System.currentTimeMillis()
+                tBeepStarted = tWakeDetected
+                pauseHotwordDetector()
+                speaker.playWakeBeep()
+                onStatusChange("Đang kích hoạt...", true, false)
+                glowOverlayManager.show()
+
+                pendingCommandStartRunnable?.let { mainHandler.removeCallbacks(it) }
+                val runnable = Runnable {
+                    pendingCommandStartRunnable = null
+                    if (isRunning && sessionCoordinator.isSessionValid(sessionId) && !isPausedForTts) {
+                        commandRetryCount = 0
+                        startCommandListening(sessionId = sessionId)
+                    }
+                }
+                pendingCommandStartRunnable = runnable
+                mainHandler.postDelayed(runnable, 420L)
+            }
+        }
     }
 
     // =========================================================================
@@ -311,15 +347,20 @@ class HotwordManager(
         Log.i(TAG, "⏱️ [T1 - Beep] Played beep at $tBeepStarted ms (+${tBeepStarted - tWakeDetected}ms from T0)")
 
         // 4. Wait for beep completion (120ms) + buffer (300ms) = 420ms before starting SpeechRecognizer
-        mainHandler.postDelayed({
-            if (isRunning && !isListeningCommand && !isPausedForTts) {
+        pendingCommandStartRunnable?.let { mainHandler.removeCallbacks(it) }
+        val sessionId = sessionCoordinator.nextSession()
+        val runnable = Runnable {
+            pendingCommandStartRunnable = null
+            if (isRunning && sessionCoordinator.isSessionValid(sessionId) && !isListeningCommand && !isPausedForTts) {
                 commandRetryCount = 0
-                startCommandListening()
+                startCommandListening(sessionId = sessionId)
             }
-        }, 420L)
+        }
+        pendingCommandStartRunnable = runnable
+        mainHandler.postDelayed(runnable, 420L)
     }
 
-    private fun getOrCreateSpeechRecognizer(): SpeechRecognizer? {
+    private fun getOrCreateSpeechRecognizer(sessionId: Long = sessionCoordinator.currentSessionId): SpeechRecognizer? {
         if (speechRecognizer == null) {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
                 Log.e(TAG, "SpeechRecognizer không khả dụng trên thiết bị")
@@ -327,7 +368,7 @@ class HotwordManager(
             }
             try {
                 speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                    setRecognitionListener(createCommandRecognitionListener())
+                    setRecognitionListener(createCommandRecognitionListener(sessionId))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khởi tạo SpeechRecognizer", e)
@@ -339,14 +380,21 @@ class HotwordManager(
 
     private fun destroySpeechRecognizer() {
         try {
+            speechRecognizer?.setRecognitionListener(null)
             speechRecognizer?.destroy()
-        } catch (e: Exception) { /* bỏ qua */ }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error destroying speechRecognizer", e)
+        }
         speechRecognizer = null
     }
 
     @Volatile private var isOfflineRetryAttempt = false
 
-    private fun startCommandListening(isRetryOnline: Boolean = false) {
+    private fun startCommandListening(isRetryOnline: Boolean = false, sessionId: Long = sessionCoordinator.currentSessionId) {
+        if (!sessionCoordinator.isSessionValid(sessionId)) {
+            Log.d(TAG, "Dropping stale startCommandListening call ($sessionId vs active ${sessionCoordinator.currentSessionId})")
+            return
+        }
         isListeningCommand = true
         if (!isRetryOnline) {
             isOfflineRetryAttempt = false
@@ -358,7 +406,7 @@ class HotwordManager(
         HotwordService.start(context, "🎙️ Đang nghe lệnh...")
         glowOverlayManager.show()
 
-        val recognizer = getOrCreateSpeechRecognizer()
+        val recognizer = getOrCreateSpeechRecognizer(sessionId)
         if (recognizer == null) {
             Log.e(TAG, "SpeechRecognizer không khả dụng trên thiết bị")
             onLogMessage("Thiết bị chưa cài Google Speech Engine", false, "LỖI")
@@ -412,13 +460,17 @@ class HotwordManager(
     }
 
     private fun cancelCommandListening() {
+        sessionCoordinator.invalidateSession()
+        pendingCommandStartRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingCommandStartRunnable = null
         mainHandler.removeCallbacks(commandTimeoutRunnable)
         isListeningCommand = false
         glowOverlayManager.hide()
         try {
+            speechRecognizer?.setRecognitionListener(null)
             speechRecognizer?.stopListening()
             speechRecognizer?.cancel()
-        } catch (e: Exception) { /* bỏ qua */ }
+        } catch (e: Exception) { /* ignore */ }
     }
 
     private fun handleCommandTimeoutOrNoSpeech(reason: String) {
@@ -433,9 +485,10 @@ class HotwordManager(
             speaker.playWakeBeep()
             try { speechRecognizer?.cancel() } catch (_: Exception) {}
 
+            val retrySessionId = sessionCoordinator.nextSession()
             mainHandler.postDelayed({
-                if (isRunning && !isPausedForTts) {
-                    startCommandListening()
+                if (isRunning && sessionCoordinator.isSessionValid(retrySessionId) && !isPausedForTts) {
+                    startCommandListening(sessionId = retrySessionId)
                 }
             }, 450L)
         } else {
@@ -447,14 +500,16 @@ class HotwordManager(
         }
     }
 
-    private fun createCommandRecognitionListener() = object : RecognitionListener {
+    private fun createCommandRecognitionListener(sessionId: Long) = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
+            if (!sessionCoordinator.isSessionValid(sessionId)) return
             tSttReady = System.currentTimeMillis()
             Log.i(TAG, "⏱️ [T3 - STT Ready] Mic sẵn sàng nghe lệnh lúc $tSttReady ms (+${tSttReady - tSttStart}ms từ STT start, tổng: +${tSttReady - tWakeDetected}ms)")
             onStatusChange("🎙️ SẴN SÀNG! MỜI BẠN NÓI...", true, false)
         }
 
         override fun onBeginningOfSpeech() {
+            if (!sessionCoordinator.isSessionValid(sessionId)) return
             val tSpeech = System.currentTimeMillis()
             Log.i(TAG, "⏱️ [T4 - Speaking] Người dùng bắt đầu nói lúc $tSpeech ms (+${tSpeech - tSttReady}ms từ khi mic sẵn sàng)")
             onStatusChange("🎙️ Đang thu âm câu lệnh...", true, false)
@@ -465,12 +520,14 @@ class HotwordManager(
         override fun onBufferReceived(buffer: ByteArray?) {}
 
         override fun onEndOfSpeech() {
+            if (!sessionCoordinator.isSessionValid(sessionId)) return
             Log.d(TAG, "Người dùng đã dứt câu — đang nhận diện kết quả...")
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             onStatusChange("Đang nhận diện...", true, false)
         }
 
         override fun onError(errorCode: Int) {
+            if (!sessionCoordinator.isSessionValid(sessionId)) return
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             val errorMsg = describeSpeechError(errorCode)
             Log.w(TAG, "SpeechRecognizer báo lỗi ($errorCode): $errorMsg")
@@ -483,9 +540,10 @@ class HotwordManager(
                 isOfflineRetryAttempt = true
                 Log.w(TAG, "SpeechRecognizer encountered error $errorCode, retrying with Online mode...")
                 destroySpeechRecognizer()
+                val retrySessionId = sessionCoordinator.nextSession()
                 mainHandler.postDelayed({
-                    if (isRunning && !isPausedForTts) {
-                        startCommandListening(isRetryOnline = true)
+                    if (isRunning && sessionCoordinator.isSessionValid(retrySessionId) && !isPausedForTts) {
+                        startCommandListening(isRetryOnline = true, sessionId = retrySessionId)
                     }
                 }, 350L)
             } else {
@@ -495,12 +553,14 @@ class HotwordManager(
                 glowOverlayManager.hide()
                 if (errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || errorCode == SpeechRecognizer.ERROR_CLIENT) {
                     destroySpeechRecognizer()
+                    onStatusChange("Dịch vụ giọng nói đang bận, vui lòng thử lại sau giây lát", false, false)
                 }
                 resumeHotwordDetector(delayMs = 400)
             }
         }
 
         override fun onResults(results: Bundle?) {
+            if (!sessionCoordinator.isSessionValid(sessionId)) return
             mainHandler.removeCallbacks(commandTimeoutRunnable)
             isListeningCommand = false
 
@@ -536,6 +596,7 @@ class HotwordManager(
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
+            if (!sessionCoordinator.isSessionValid(sessionId)) return
             val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val partial = matches?.firstOrNull()?.trim() ?: ""
             if (partial.isNotEmpty()) {
