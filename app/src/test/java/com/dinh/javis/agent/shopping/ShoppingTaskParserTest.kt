@@ -180,4 +180,134 @@ class ShoppingTaskParserTest {
         val cmd3 = parser.parse("Shopee là gì?")
         assertTrue(cmd3 is Command.AskAi)
     }
+
+    // ─── Regression matrix: Android ICU / API 30 crash fix ───────────────────
+
+    /**
+     * A1: Exact English command that triggered PatternSyntaxException on TECNO LE7 (Android 11/API 30).
+     * Must complete without exception, route to FindProduct, clean typo "t-shurt" -> "t-shirt",
+     * and resolve standalone "100k" as inclusive max 100,000 VND.
+     */
+    @Test
+    fun `A1 - exact english crash input must not throw and parses correctly`() {
+        // Previously crashed at pattern compilation with:
+        // java.util.regex.PatternSyntaxException: Look-behind pattern matches must have a bounded maximum length
+        val input = "find t-shurt 100k on shopee"
+        // Must NOT throw
+        val result = ShoppingTaskParser.parse(input)
+        assertTrue("A1 must succeed", result is ShoppingParseResult.Success)
+        val req = (result as ShoppingParseResult.Success).request
+        assertEquals("t-shirt", req.query)
+        assertEquals(100_000L, req.maxPrice)
+        assertNull(req.minPrice)
+        assertEquals(BudgetBoundary.INCLUSIVE_MAX, req.budgetBoundary)
+    }
+
+    /**
+     * A2: Exact Vietnamese command that also hit the fallback regex crash.
+     * Must complete without exception and resolve strict budget below 100k.
+     */
+    @Test
+    fun `A2 - exact vietnamese crash input must not throw and parses correctly`() {
+        val input = "tìm áo thun dưới 100k trên Shopee"
+        val result = ShoppingTaskParser.parse(input)
+        assertTrue("A2 must succeed", result is ShoppingParseResult.Success)
+        val req = (result as ShoppingParseResult.Success).request
+        assertEquals("áo thun", req.query)
+        assertEquals(100_000L, req.maxPrice)
+        assertEquals(BudgetBoundary.STRICTLY_BELOW, req.budgetBoundary)
+    }
+
+    /**
+     * Spec-vs-price disambiguation: "tivi 4k", "man hinh 4k", "màn hình 4k", "camera 4k", "tv 4k"
+     * within search commands must keep 4k as a specification and NOT interpret it as a price.
+     */
+    @Test
+    fun `spec disambiguation - tivi 4k not parsed as budget`() {
+        val req = ShoppingTaskParser.parseRequest("tìm tivi 4k trên shopee")!!
+        assertNull("tivi 4k: maxPrice must be null (spec, not price)", req.maxPrice)
+        assertTrue("query must contain 4k", req.query.contains("4k"))
+    }
+
+    @Test
+    fun `spec disambiguation - man hinh 4k not parsed as budget`() {
+        val req = ShoppingTaskParser.parseRequest("tìm man hinh 4k trên shopee")!!
+        assertNull("man hinh 4k: maxPrice must be null", req.maxPrice)
+    }
+
+    @Test
+    fun `spec disambiguation - man hinh accented 4k not parsed as budget`() {
+        val req = ShoppingTaskParser.parseRequest("tìm màn hình 4k trên shopee")!!
+        assertNull("màn hình 4k: maxPrice must be null", req.maxPrice)
+    }
+
+    @Test
+    fun `spec disambiguation - camera 4k not parsed as budget`() {
+        val req = ShoppingTaskParser.parseRequest("tìm camera 4k trên shopee")!!
+        assertNull("camera 4k: maxPrice must be null", req.maxPrice)
+    }
+
+    @Test
+    fun `spec disambiguation - tv 4k not parsed as budget`() {
+        val req = ShoppingTaskParser.parseRequest("tìm tv 4k trên shopee")!!
+        assertNull("tv 4k: maxPrice must be null", req.maxPrice)
+    }
+
+    /**
+     * Multiple spaces/tabs in spec context must not throw or silently drop the spec.
+     */
+    @Test
+    fun `multi-space in screen context must not throw and preserves spec`() {
+        val req = ShoppingTaskParser.parseRequest("tìm màn  hình   4k trên shopee")!!
+        assertNull("màn  hình  4k (multi-space): maxPrice must be null", req.maxPrice)
+    }
+
+    /**
+     * Resolution spec + a later explicit price clause: keep 4k as product spec,
+     * extract the later real budget correctly.
+     */
+    @Test
+    fun `resolution plus later real price - man hinh 4k duoi 5tr`() {
+        val req = ShoppingTaskParser.parseRequest("tìm màn hình 4k dưới 5tr trên shopee")!!
+        assertNotNull("Should extract explicit budget 5tr", req.maxPrice)
+        assertEquals(5_000_000L, req.maxPrice)
+        assertEquals(BudgetBoundary.STRICTLY_BELOW, req.budgetBoundary)
+        assertTrue("Query should contain 4k", req.query.contains("4k"))
+    }
+
+    /**
+     * All supported compact money formats must parse without errors.
+     */
+    @Test
+    fun `all supported money formats parse without exception`() {
+        assertEquals(500_000L, ShoppingTaskParser.parseSingleAmount("500 nghìn"))
+        assertEquals(1_500_000L, ShoppingTaskParser.parseSingleAmount("1.5 triệu"))
+        assertEquals(2_000_000L, ShoppingTaskParser.parseSingleAmount("2tr"))
+        assertEquals(100_000L, ShoppingTaskParser.parseSingleAmount("100k"))
+        // Compound 1tr5 is correctly parsed to 1.5 million via parseSingleAmount
+        assertEquals(1_500_000L, ShoppingTaskParser.parseSingleAmount("1tr5"))
+
+        // End-to-end: standalone "2tr" token in query is resolved as 2,000,000 VND via fallback path
+        val r = ShoppingTaskParser.parseRequest("tìm giày 2tr trên shopee")!!
+        assertEquals(2_000_000L, r.maxPrice)
+    }
+
+    /**
+     * Blank input must not crash; returns NeedsInput.
+     */
+    @Test
+    fun `blank input returns NeedsInput without crash`() {
+        val r = ShoppingTaskParser.parse("   ")
+        // parse returns NeedsInput or Success with empty query → NeedsInput from guard
+        assertTrue(r is ShoppingParseResult.NeedsInput)
+    }
+
+    /**
+     * Input with a price but no product name: NeedsInput, no unsafe dispatch.
+     */
+    @Test
+    fun `price without product returns NeedsInput`() {
+        val r = ShoppingTaskParser.parse("find 100k on shopee")
+        assertTrue("Price-only query must return NeedsInput", r is ShoppingParseResult.NeedsInput)
+    }
 }

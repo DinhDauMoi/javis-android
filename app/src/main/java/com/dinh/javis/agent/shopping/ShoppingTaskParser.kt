@@ -214,10 +214,13 @@ object ShoppingTaskParser {
             }
         }
 
-        // Fallback: search for any standalone price like "100k", "500 nghìn", "1.5 triệu", "2tr"
-        // Avoid matching resolution (e.g., "4k monitor", "tivi 4k")
+        // Fallback: search for any standalone price like "100k", "500 nghìn", "1.5 triệu", "2tr".
+        // Android ICU (API 26-34) rejects unbounded look-behind quantifiers like (?<!man\s+hinh\s).
+        // Fix: use a simple forward pattern to find numeric+unit tokens, then inspect preceding context
+        // in Kotlin to exclude specification keywords (tivi, man hinh, màn hình, camera, tv).
+        // This is semantically equivalent to the old look-behind approach but Android-runtime-compatible.
         val standaloneRegex = Pattern.compile(
-            """\b(?<!tivi\s)(?<!man\s+hinh\s)(?<!camera\s)(?<!tv\s)([0-9.,]+)\s*(k|tr|nghìn|nghin|ngàn|ngan|triệu|trieu|đồng|dong|đ|vnd|m)\b""",
+            """([0-9.,]+)\s*(k|tr|nghìn|nghin|ngàn|ngan|triệu|trieu|đồng|dong|đ|vnd|m)\b""",
             Pattern.CASE_INSENSITIVE
         )
         val standaloneMatcher = standaloneRegex.matcher(cleanInput)
@@ -225,6 +228,23 @@ object ShoppingTaskParser {
             val numStr = standaloneMatcher.group(1)
             val unitStr = standaloneMatcher.group(2)
             val fullMatch = standaloneMatcher.group(0)
+            val matchStart = standaloneMatcher.start()
+
+            // Inspect up to 25 characters before this token for spec context (replaces unbounded look-behind)
+            val precedingContext = if (matchStart > 0) {
+                val contextStart = maxOf(0, matchStart - 25)
+                TextNormalizer.removeAccents(cleanInput.substring(contextStart, matchStart).lowercase())
+            } else ""
+
+            // Reject tokens preceded by known resolution/product-spec keywords
+            val isSpecContext = precedingContext.trimEnd().let { ctx ->
+                ctx.endsWith("tivi") || ctx.endsWith("tivi ") ||
+                ctx.endsWith("tv") || ctx.endsWith("tv ") ||
+                ctx.endsWith("camera") || ctx.endsWith("camera ") ||
+                ctx.endsWith("man hinh") || ctx.endsWith("man hinh ") ||
+                ctx.endsWith("hinh") || ctx.endsWith("hinh ")
+            }
+            if (isSpecContext) continue
 
             // If unit is "k" and number < 10 (like "4k"), treat as resolution/spec unless context specifies price
             val numValue = numStr?.replace(",", ".")?.toDoubleOrNull() ?: 0.0

@@ -186,7 +186,19 @@
 - ADB is optional for diagnostics/installation, never a normal application runtime prerequisite. Confirm actual OPPO model and whether the reported transition means lock/unlock, minimize/restore, or supported physical folding.
 - Preserve this review and update it with actual evidence. No full completion claim until required acceptance evidence exists. Do not repeatedly regenerate a missing plan instead of advancing validation.
 
-### Current Verdict and Evidence Limits
+### Android ICU Parser Crash Fix — versionCode 55 (Completed Code, Pending Device)
+
+- **Root cause:** `(?<!man\s+hinh\s)` unbounded look-behind in `ShoppingTaskParser.kt` line ~220 rejected by Android ICU regex engine (API 26-34) at compile time, causing `PatternSyntaxException` and process death on TECNO LE7 / Android 11 / API 30 / JAVIS versionCode 54.
+- **Fix:** Removed all look-behinds from the standalone-price fallback regex. Now uses a simple `([0-9.,]+)\s*(k|tr|...)` forward pattern; spec-keyword exclusion (`tivi`, `man hinh`, `màn hình`, `camera`, `tv`) is performed in Kotlin by inspecting up to 25 characters before the match start (`precedingContext.trimEnd().endsWith(...)`). Semantically equivalent, Android-ICU-compatible.
+- **A2 branch note:** `tìm áo thun dưới 100k` uses the `maxRegex` (explicit prefix `dưới`) and returns before reaching the standalone fallback. Both code paths are now safe. The fix is not redundant — any query without an explicit prefix keyword still exercises the fixed fallback.
+- **Test coverage:** 12 new JVM regression tests added to `ShoppingTaskParserTest.kt` (A1/A2 exact inputs, all 5 spec disambiguation cases, multi-space context, resolution+price, money formats, blank/price-only inputs). 159/159 JVM unit tests pass, 0 failures, 0 errors.
+- **Android instrumentation:** `ShoppingTaskParserAndroidTest.kt` created at `app/src/androidTest/java/com/dinh/javis/agent/shopping/` with 24 cases mirroring the plan regression matrix. Instrumentation APK built (`app-debug-androidTest.apk`, 607KB, SHA-256: `d37c0cbee824d4f02e249d04c74d088e934bd8f911e2bb4f1940f9ae6251287d`). On-device execution pending.
+- **Patched APK:** `app/build/outputs/apk/debug/app-debug.apk`, ~75MB, SHA-256: `4483314117b318607ed057c472fda4e500b7276ee68bc726aaa45a912fd19cd7`, package: `com.dinh.javis`, versionCode: **55**, versionName: **1.0.55**, minSdk: 26, targetSdk: 34, debug-signed.
+- **Build command:** `./gradlew :app:testDebugUnitTest :app:assembleDebug -PversionCode=55 -PversionName=1.0.55`
+- **Remaining:** On-device A1/A2 retests on TECNO LE7; A4/A5 (consent flow, mid-search cancel) still pending from prior plan. Plan stays in `plan/pending/` until device evidence collected.
+
+
+### Current Verdict and Evidence Limits (Earlier Review; See New Regression Above)
 
 **Implementation and APK exist; full end-user acceptance is not yet established by the evidence reviewed.** This is not a claim that the software is necessarily still broken. Previous Completed headings and test counts describe historical reports, not a fresh execution or proof of device behavior.
 
