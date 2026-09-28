@@ -159,6 +159,21 @@
   - Toggle-to-cancel: Tapping the mic button while listening or starting cancels the active session cleanly and stops listening.
   - Immediate recognizer cleanup: Detaches `RecognitionListener` before `destroy()` and handles `ERROR_RECOGNIZER_BUSY`/`ERROR_CLIENT` without deadlock or permanent busy state.
   - Screen transition handling: Added `orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode` to `MainActivity` in `AndroidManifest.xml` to prevent destructive activity recreation during foldable screen transitions (OPPO Find N series).
-  - Added unit test suite `VoiceSessionCoordinatorTest.kt` (7/7 tests passing).
-- **Validation Results:** All 142 debug unit tests pass (`BUILD SUCCESSFUL in 29s`); debug APK built cleanly (`./gradlew :app:assembleDebug`).
+  - Added unit test suite `VoiceSessionCoordinatorTest.kt` (8/8 tests passing).
+- **Validation Results:** All 147 debug unit tests pass across 20 test suites (`BUILD SUCCESSFUL`); debug APK built cleanly (`./gradlew assembleDebug`).
+
+---
+
+## 9. Deliverable APK Artifact & Testing Handoff (Completed 2026-09-28)
+- **APK Artifact Location & Metadata:**
+  - File: `app/build/outputs/apk/debug/app-debug.apk` (and `app/build/outputs/app-debug.apk`)
+  - Size: 78,020,260 bytes (~74.4 MB)
+  - SHA-256: `40933a35ed1427108c97599dc3a9c544f86a96b556f874d1ae7d4c9990d2a863`
+  - Package: `com.dinh.javis`, Version: `1.0.1` (code 1), minSdk: 26, targetSdk: 34, debug-signed.
+- **Independence from ADB:**
+  - JAVIS does NOT depend on ADB at runtime. Clipboard access uses native Android APIs (`ClipboardManager`). Normal operation, voice recognition, accessibility services, and UI actions run entirely on Android OS without ADB.
+- **Verification Status:**
+  - Automated verification complete (147/147 unit tests pass, debug APK cleanly assembled).
+  - On-device acceptance pending manual execution of the A1–A10 checklist on the user's Android phone.
+
 
