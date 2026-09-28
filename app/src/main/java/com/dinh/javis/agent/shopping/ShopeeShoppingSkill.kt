@@ -60,7 +60,7 @@ class ShopeeShoppingSkill(
 
         // 1. Verify capture readiness preflight (R5)
         if (!ScreenCaptureService.isCapturing()) {
-            val msg = "Chưa cấp quyền hoặc chưa bật dịch vụ quan sát màn hình (ScreenCaptureService)."
+            val msg = "Chưa cấp quyền hoặc chưa bật dịch vụ quan sát màn hình (ScreenCaptureService). Bạn hãy nói 'Bật dịch vụ màn hình' để cấp quyền nhé."
             Log.w(TAG, msg)
             callback?.onCompleted(false, msg)
             return ShoppingResult(

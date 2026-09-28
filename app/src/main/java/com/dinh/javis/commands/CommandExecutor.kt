@@ -62,6 +62,7 @@ class CommandExecutor(
             is Command.ToggleTorch -> handleTorch(command.enable)
             is Command.LockScreen -> handleLockScreen()
             is Command.TakeScreenshot -> handleTakeScreenshot()
+            is Command.StartScreenCapture -> handleStartScreenCapture()
             is Command.GetTime -> handleGetTime()
             is Command.GetDate -> handleGetDate()
             is Command.SetTimer -> handleSetTimer(command.totalSeconds, command.label)
@@ -286,6 +287,28 @@ class CommandExecutor(
             respondWithBeep("Đã chụp ảnh màn hình", "CHỤP MÀN HÌNH")
         } else {
             respondWithVoice("Không thể chụp ảnh màn hình lúc này", "LỖI")
+        }
+    }
+
+    /**
+     * Handles user command requesting activation or consent for ScreenCaptureService (lang: en).
+     */
+    private fun handleStartScreenCapture() {
+        if (com.dinh.javis.vision.ScreenCaptureService.isCapturing()) {
+            respondWithVoice("Dịch vụ quan sát màn hình đã được bật và đang hoạt động.", "THỊ GIÁC")
+            return
+        }
+
+        respondWithVoice("Đang mở hộp thoại cấp quyền quan sát màn hình...", "THỊ GIÁC")
+
+        if (context is com.dinh.javis.MainActivity) {
+            context.requestScreenCaptureConsent()
+        } else {
+            val intent = Intent(context, com.dinh.javis.MainActivity::class.java).apply {
+                action = "com.dinh.javis.ACTION_REQUEST_SCREEN_CAPTURE"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            context.startActivity(intent)
         }
     }
 

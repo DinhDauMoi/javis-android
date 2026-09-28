@@ -219,6 +219,8 @@ class MainActivity : AppCompatActivity() {
         if (intent == null) return
         if (intent.action == ACTION_TRIGGER_VOICE || intent.action == "com.dinh.javis.ACTION_START_VOICE") {
             binding.root.postDelayed({ hotwordManager.triggerOneShotCommand() }, 300)
+        } else if (intent.action == "com.dinh.javis.ACTION_REQUEST_SCREEN_CAPTURE") {
+            requestScreenCaptureConsent()
         }
     }
 

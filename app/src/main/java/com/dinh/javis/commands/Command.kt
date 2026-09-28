@@ -23,6 +23,7 @@ sealed class Command {
     data class ToggleTorch(val enable: Boolean) : Command()
     object LockScreen : Command()
     object TakeScreenshot : Command()
+    object StartScreenCapture : Command() // Triggers MediaProjection consent for ScreenCaptureService
 
     // 4. Tiện ích thời gian, báo thức, cuộc gọi
     object GetTime : Command()

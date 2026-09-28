@@ -72,7 +72,16 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
             return Command.ScrollDown
         }
 
-        // 3. Thị giác máy tính: "nhìn màn hình", "xem màn hình", "màn hình có gì", "phân tích màn hình", "đọc màn hình"
+        // 3. Screen capture service activation intent: "bật dịch vụ màn hình", "turn on screenCaptureService", etc.
+        if (normalized.contains("screencaptureservice") ||
+            normalized.contains("screen capture") ||
+            (normalized.contains("bat") && (normalized.contains("dich vu man hinh") || normalized.contains("quan sat man hinh") || normalized.contains("thi giac man hinh"))) ||
+            (normalized.contains("cap quyen") && (normalized.contains("man hinh") || normalized.contains("quan sat")))
+        ) {
+            return Command.StartScreenCapture
+        }
+
+        // 4. Computer vision & screen analysis: "nhìn màn hình", "xem màn hình", "màn hình có gì"
         if (normalized.contains("nhin man hinh") || normalized.contains("xem man hinh") ||
             normalized.contains("man hinh co gi") || normalized.contains("phan tich man hinh") ||
             normalized.contains("doc man hinh") || normalized.contains("tren man hinh co")

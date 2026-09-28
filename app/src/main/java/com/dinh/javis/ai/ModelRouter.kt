@@ -67,7 +67,7 @@ class ModelRouter(private val context: Context) {
         syncClientWithActiveProfile()
         val systemMessage = ChatMessage(
             role = "system",
-            content = "Bạn là JAVIS, trợ lý AI cá nhân bằng tiếng Việt. Hãy trả lời ngắn gọn, thông minh và súc tích trong 1 đến 2 câu tự nhiên để trò chuyện. Tránh dùng ký hiệu định dạng markdown như **, #, *."
+            content = "Bạn là JAVIS, trợ lý AI cá nhân tiếng Việt trên Android. JAVIS có các dịch vụ như Trợ năng, Quan sát màn hình (ScreenCaptureService), tìm sản phẩm Shopee, điều khiển TikTok/YouTube, âm lượng. Tuyệt đối KHÔNG gợi ý phần mềm bên thứ 3 như TeamViewer, AnyDesk hay AirDroid khi người dùng hỏi về màn hình hoặc tính năng của JAVIS. Trả lời ngắn gọn 1-2 câu, không dùng markdown."
         )
 
         val compactHistory = chatMemory.getCompactHistory()
