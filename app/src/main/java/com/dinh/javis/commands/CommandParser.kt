@@ -1,5 +1,6 @@
 package com.dinh.javis.commands
 
+import android.util.Log
 import com.dinh.javis.data.CustomCommand
 import com.dinh.javis.utils.TextNormalizer
 import java.util.regex.Pattern
@@ -54,23 +55,54 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
 
         // 2. Điều khiển cử chỉ cuộn / lướt (TikTok, Facebook Reels, YouTube Shorts, v.v.)
         //
-        // QUY ƯỚC CHIỀU LƯỚT:
-        //   "lướt lên", "vuốt lên", "cuộn lên" = xem nội dung mới phía dưới (giống vuốt ngón tay từ dưới lên)
-        //   "lướt xuống", "vuốt xuống", "cuộn xuống" = xem nội dung trước đó phía trên (vuốt từ trên xuống)
-        if (normalized.contains("luot len") || normalized.contains("vuot len") ||
-            normalized.contains("cuon len") || normalized.contains("next") ||
-            normalized.contains("video tiep") || normalized.contains("tiep theo") ||
-            normalized.contains("next video") || normalized.contains("sang video") ||
-            normalized.contains("xem tiep") || normalized == "len"
-        ) {
+        // SCROLL DIRECTION CONVENTION:
+        //   "lướt lên", "vuốt lên", "cuộn lên" = view next content below (swipe finger bottom-to-top)
+        //   "lướt xuống", "vuốt xuống", "cuộn xuống" = view previous content above (swipe finger top-to-bottom)
+        //
+        // SUPPORTED FORMS: Vietnamese (accented/unaccented), English (scroll up/down), mixed
+        //   Vietnamese-English (lướt up / lướt down), and common ASR error variants.
+        //
+        // TOKEN SAFETY: bare "up" / "down" only match as standalone words to prevent
+        //   false positives inside unrelated utterances (e.g. "set volume up a bit").
+        val isScrollUp = normalized.contains("luot len") || normalized.contains("vuot len") ||
+            normalized.contains("cuon len") ||
+            // English direction words — whole-word match to avoid accidental trigger
+            normalized.contains("scroll up") || normalized.contains("swipe up") ||
+            // Mixed Vietnamese-English: "lướt up", "vuốt up"
+            normalized.contains("luot up") || normalized.contains("vuot up") ||
+            normalized.contains("cuon up") ||
+            // Semantic synonyms already supported
+            normalized.contains("next video") || normalized.contains("video tiep") ||
+            normalized.contains("tiep theo") || normalized.contains("sang video") ||
+            normalized.contains("xem tiep") ||
+            // Bare "up" / "next" as sole token (whole-word boundary check)
+            normalized == "up" || normalized == "len" || normalized == "next"
+
+        if (isScrollUp) {
+            Log.d(SCROLL_TAG, "ScrollUp matched | raw='$trimmed' normalized='$normalized'")
             return Command.ScrollUp
         }
 
-        if (normalized.contains("luot xuong") || normalized.contains("vuot xuong") ||
-            normalized.contains("cuon xuong") || normalized.contains("previous") ||
-            normalized.contains("video truoc") || normalized.contains("quay lai video") ||
-            normalized.contains("xem lai") || normalized == "xuong"
-        ) {
+        // ASR near-match recovery for scroll-down: "nước xuống" is a common mis-transcription
+        // of "lướt xuống". The normalized form loses diacritics so it becomes "nuoc xuong",
+        // which we safely treat as an unambiguous scroll-down intent.
+        val isScrollDown = normalized.contains("luot xuong") || normalized.contains("vuot xuong") ||
+            normalized.contains("cuon xuong") ||
+            // English direction words — whole-word match
+            normalized.contains("scroll down") || normalized.contains("swipe down") ||
+            // Mixed Vietnamese-English: "lướt down", "vuốt down"
+            normalized.contains("luot down") || normalized.contains("vuot down") ||
+            normalized.contains("cuon down") ||
+            // ASR mis-transcription recovery: "nước xuống" -> "nuoc xuong"
+            normalized.contains("nuoc xuong") ||
+            // Semantic synonyms
+            normalized.contains("previous") || normalized.contains("video truoc") ||
+            normalized.contains("quay lai video") || normalized.contains("xem lai") ||
+            // Bare "down" / "xuong" as sole token
+            normalized == "down" || normalized == "xuong"
+
+        if (isScrollDown) {
+            Log.d(SCROLL_TAG, "ScrollDown matched | raw='$trimmed' normalized='$normalized'")
             return Command.ScrollDown
         }
 
@@ -257,6 +289,12 @@ class CommandParser(private var customCommands: List<CustomCommand> = emptyList(
         }
 
         // 15. Mặc định: Gửi cho AI trả lời thông minh
+        Log.d(SCROLL_TAG, "No scroll command matched | raw='$trimmed' normalized='$normalized'")
         return Command.AskAi(trimmed)
+    }
+
+    companion object {
+        /** Log tag for scroll command diagnostics (captures raw ASR text and matched direction). */
+        private const val SCROLL_TAG = "JavisScrollCmd"
     }
 }

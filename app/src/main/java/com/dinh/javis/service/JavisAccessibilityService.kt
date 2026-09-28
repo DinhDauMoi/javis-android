@@ -56,15 +56,21 @@ class JavisAccessibilityService : AccessibilityService() {
                 val success = scrollableNode.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
                 scrollableNode.recycle()
                 if (success) {
-                    Log.d(TAG, "Cuộn trang tiếp (ACTION_SCROLL_FORWARD) thành công qua Node.")
+                    Log.d(TAG, "scrollForward: ACTION_SCROLL_FORWARD accepted via node.")
                     return true
                 }
+                Log.d(TAG, "scrollForward: ACTION_SCROLL_FORWARD rejected by node; falling back to gesture.")
+            } else {
+                Log.d(TAG, "scrollForward: no scrollable node found; falling back to gesture.")
             }
+        } else {
+            Log.w(TAG, "scrollForward: rootInActiveWindow is null; falling back to gesture.")
         }
 
-        // Fallback: Vuốt tay từ dưới lên giữa màn hình
-        Log.d(TAG, "Thực hiện fallback vuốt từ dưới lên.")
-        return swipeUp()
+        // Fallback: swipe finger from bottom to top
+        val gestureAccepted = swipeUp()
+        Log.d(TAG, "scrollForward: swipeUp gesture dispatch accepted=$gestureAccepted")
+        return gestureAccepted
     }
 
     /**
@@ -78,15 +84,21 @@ class JavisAccessibilityService : AccessibilityService() {
                 val success = scrollableNode.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
                 scrollableNode.recycle()
                 if (success) {
-                    Log.d(TAG, "Cuộn trang trước (ACTION_SCROLL_BACKWARD) thành công qua Node.")
+                    Log.d(TAG, "scrollBackward: ACTION_SCROLL_BACKWARD accepted via node.")
                     return true
                 }
+                Log.d(TAG, "scrollBackward: ACTION_SCROLL_BACKWARD rejected by node; falling back to gesture.")
+            } else {
+                Log.d(TAG, "scrollBackward: no scrollable node found; falling back to gesture.")
             }
+        } else {
+            Log.w(TAG, "scrollBackward: rootInActiveWindow is null; falling back to gesture.")
         }
 
-        // Fallback: Vuốt tay từ trên xuống
-        Log.d(TAG, "Thực hiện fallback vuốt từ trên xuống.")
-        return swipeDown()
+        // Fallback: swipe finger from top to bottom
+        val gestureAccepted = swipeDown()
+        Log.d(TAG, "scrollBackward: swipeDown gesture dispatch accepted=$gestureAccepted")
+        return gestureAccepted
     }
 
     /**

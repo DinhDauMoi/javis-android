@@ -248,3 +248,48 @@ Provide the actual APK transfer location, current version/checksum, and normal A
 Record build/device, exact steps, visible status and outcome. Optional sanitized diagnostics may help; do not collect secrets, raw audio or unnecessary screen contents. If phone access is unavailable, complete safe code/build/test work and label **ready for APK testing / phone acceptance pending** where evidence supports it. Full completion requires recorded acceptance, not merely an unchanged APK or a clean Git tree.
 
 
+
+---
+
+## 11. Voice Scroll Command Fix — versionCode 56 (Completed Code, Pending Device)
+
+**Plan:** `plan/pending/fix-voice-scroll-command-not-working.md`
+
+### Root Cause / Parser Gaps
+- `CommandParser` only matched Vietnamese scroll forms (`luot len`, `luot xuong`, etc.) and English `previous`.
+- Mixed Vietnamese-English phrases like `"lướt up"`, `"lướt down"` and pure English `"scroll up"`, `"scroll down"`, `"swipe up"`, `"swipe down"` were not recognized → fell through to AskAi.
+- Bare `"up"` / `"down"` were not matched (only `"lên"` / `"xuống"` as exact match).
+- ASR mis-transcription `"nước xuống"` → `"nuoc xuong"` was not recognized.
+
+### Changes Made
+
+**`CommandParser.kt`**:
+- Added `import android.util.Log`.
+- Replaced monolithic scroll if/else blocks with `val isScrollUp` / `val isScrollDown` booleans for readability.
+- Added English forms: `"scroll up"`, `"scroll down"`, `"swipe up"`, `"swipe down"`.
+- Added mixed Vietnamese-English: `"luot up"`, `"vuot up"`, `"cuon up"`, `"luot down"`, `"vuot down"`, `"cuon down"`.
+- Added `"up"` / `"down"` as bare standalone-token matches (equality check prevents false positives in `"download"`, `"uproar"`, `"what is up"`).
+- Added ASR error recovery: `"nuoc xuong"` -> `ScrollDown` (safe specific phrase; no AI call needed).
+- Added `Log.d(SCROLL_TAG, ...)` for diagnostics on every scroll match and on AskAi fallthrough.
+
+**`JavisAccessibilityService.kt`**:
+- Enhanced `scrollForward` / `scrollBackward` with detailed `Log.d` entries recording: node found/not-found, node action accepted/rejected, gesture dispatch accepted/rejected.
+
+**`CommandParserScrollTest.kt`** (new file):
+- 44 test cases across 10 categories: Vietnamese (accented + unaccented), English, mixed, wake-word stripping, ASR recovery, semantic synonyms, bare tokens, negative cases, case insensitivity.
+
+### Test Results
+- 211/211 JVM unit tests pass, 0 failures, 0 errors (scroll test adds 44 to prior 167).
+- Build: `./gradlew :app:testDebugUnitTest`
+
+### APK Artifact
+- versionCode: **56**, versionName: **1.0.56**
+- Build command: `./gradlew :app:assembleDebug -PversionCode=56 -PversionName=1.0.56`
+- File: `app/build/outputs/apk/debug/app-debug.apk`, ~75MB
+- SHA-256: `df81575b5a73c7653d66d9e1bbac7a85efde112004564a3991c7b0605f0dfd56`
+
+### Remaining (On-Device)
+- Verify "lướt up", "lướt down", "scroll up", "scroll down", "nước xuống" all dispatch the correct scroll direction on TikTok/YouTube with accessibility enabled.
+- Confirm gesture dispatch is accepted (logcat `accepted=true`) when no scrollable node exists.
+- Confirm clear Vietnamese voice feedback when accessibility service is disconnected.
+- Plan moves to `plan/completed/` only after device evidence is collected or upon explicit user instruction.
