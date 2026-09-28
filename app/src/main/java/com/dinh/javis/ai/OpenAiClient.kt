@@ -79,6 +79,42 @@ class OpenAiClient(private val preferenceManager: PreferenceManager) {
         }
     }
 
+    /**
+     * Stateless intent classification for voice-command recovery.
+     *
+     * Sends ONLY the [systemPrompt] + the single [transcript] message — no chat
+     * history is appended, so unrelated conversation content is never sent to
+     * the provider for this call (privacy/correctness boundary per plan review 4.4).
+     *
+     * Returns the raw model text (expected JSON). Propagates exceptions to the
+     * caller for explicit retry/fallback handling.
+     */
+    suspend fun classifyIntent(systemPrompt: String, transcript: String): String = withContext(Dispatchers.IO) {
+        val apiKey = preferenceManager.openAiApiKey.trim()
+        val baseUrl = preferenceManager.openAiBaseUrl.trim()
+        val model = preferenceManager.openAiModel.ifBlank { "gpt-4o-mini" }
+
+        if (apiKey.isBlank()) {
+            throw java.lang.IllegalStateException("API key not configured")
+        }
+
+        val client = OpenAiCompatibleClient(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            defaultChatModel = model,
+            defaultVisionModel = model,
+            defaultPlanningModel = model
+        )
+        val messages = listOf(
+            ChatMessage(role = "system", content = systemPrompt),
+            ChatMessage(role = "user", content = transcript)
+        )
+        return@withContext client.chat(
+            messages = messages,
+            options = ModelOptions(temperature = 0.3, maxTokens = 256)
+        )
+    }
+
     companion object {
         private const val TAG = "OpenAiClient"
     }

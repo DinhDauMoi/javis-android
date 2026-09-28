@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.dinh.javis.ai.OpenAiClient
+import com.dinh.javis.commands.Command
 import com.dinh.javis.commands.CommandExecutor
 import com.dinh.javis.commands.CommandParser
 import com.dinh.javis.data.AppDatabase
@@ -45,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var hotwordManager: HotwordManager
     private lateinit var commandParser: CommandParser
     private lateinit var commandExecutor: CommandExecutor
+    private var openAiClientHolder: androidx.core.util.Supplier<OpenAiClient> = androidx.core.util.Supplier { error("OpenAiClient not initialized") }
     private lateinit var chatAdapter: ChatAdapter
     private lateinit var database: AppDatabase
 
@@ -184,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         speaker = Speaker(this)
         commandParser = CommandParser()
         val openAiClient = OpenAiClient(preferenceManager)
+        openAiClientHolder = androidx.core.util.Supplier { openAiClient }
 
         commandExecutor = CommandExecutor(
             context = this,
@@ -343,7 +346,36 @@ class MainActivity : AppCompatActivity() {
         binding.tvVoiceStatus.text = getString(R.string.status_processing)
 
         val command = commandParser.parse(text)
-        commandExecutor.execute(command)
+        if (command !is Command.Unknown) {
+            commandExecutor.execute(command)
+            return
+        }
+
+        // Deterministic parse could not identify intent. Attempt AI recovery
+        // using a narrow allowed-intent schema (scroll only). Falls back to
+        // Vietnamese clarification on low confidence, unsupported intent,
+        // or AI/network errors — never executes a guessed action.
+        val openAiClient = openAiClientHolder.get()
+        val classifier = com.dinh.javis.voice.VoiceIntentClassifier(
+            llmCall = if (openAiClient != null) { { sp, tr -> openAiClient.classifyIntent(sp, tr) } } else null,
+            scope = lifecycleScope
+        )
+        lifecycleScope.launch {
+            val decision = classifier.recover(text)
+            val resolved = when (decision) {
+                is com.dinh.javis.voice.VoiceIntentClassifier.RecoveryDecision.ScrollUp ->
+                    Command.ScrollUp
+                is com.dinh.javis.voice.VoiceIntentClassifier.RecoveryDecision.ScrollDown ->
+                    Command.ScrollDown
+                is com.dinh.javis.voice.VoiceIntentClassifier.RecoveryDecision.Clarify -> {
+                    appendMessage(decision.messageVi, isUser = false, tag = "AI")
+                    speaker.speak(decision.messageVi)
+                    null
+                }
+            }
+            binding.tvVoiceStatus.text = getString(R.string.status_ready)
+            resolved?.let { commandExecutor.execute(it) }
+        }
     }
 
     private fun appendMessage(text: String, isUser: Boolean, tag: String? = null) {
