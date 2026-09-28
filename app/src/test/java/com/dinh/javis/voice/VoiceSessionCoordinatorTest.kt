@@ -129,4 +129,18 @@ class VoiceSessionCoordinatorTest {
         assertEquals(threadCount * iterationsPerThread, generatedIds.size)
         assertEquals((threadCount * iterationsPerThread).toLong(), coordinator.currentSessionId)
     }
+
+    @Test
+    fun staleCallback_fromObsoleteSession_isRejected() {
+        val oldSessionId = coordinator.nextSession()
+        // User cancels or starts a new session
+        val newSessionId = coordinator.nextSession()
+
+        // Simulating recognizer callback arriving late with oldSessionId
+        val isOldCallbackAccepted = coordinator.isSessionValid(oldSessionId)
+        val isNewCallbackAccepted = coordinator.isSessionValid(newSessionId)
+
+        assertFalse("Stale callback from old session must be rejected (R13)", isOldCallbackAccepted)
+        assertTrue("Callback from active session must be accepted", isNewCallbackAccepted)
+    }
 }

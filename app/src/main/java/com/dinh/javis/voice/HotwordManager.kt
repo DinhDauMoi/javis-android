@@ -195,6 +195,18 @@ class HotwordManager(
         }
     }
 
+    /**
+     * Refreshes the current voice status to UI listeners (e.g. on Activity resume or foldable screen transition).
+     */
+    fun refreshStatus() {
+        val statusText = when {
+            isListeningCommand -> "🎙️ ĐANG NGHE... BẠN NÓI ĐI!"
+            isRunning -> "Đang chờ gọi \"javis\"..."
+            else -> "Đã tắt chờ gọi 'javis'"
+        }
+        onStatusChange(statusText, isListeningCommand, isRunning)
+    }
+
     // =========================================================================
     // INITIALIZE & EXECUTE OPENWAKEWORD ENGINE
     // =========================================================================

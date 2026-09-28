@@ -4,6 +4,8 @@ import android.graphics.Rect
 import com.dinh.javis.agent.AgentCallback
 import com.dinh.javis.agent.TaskOutcome
 import com.dinh.javis.vision.OcrBlock
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -463,5 +465,58 @@ class ShopeeShoppingSkillTest {
         assertEquals(TaskOutcome.BUDGET_EXHAUSTED, result.outcome)
         assertTrue(result.summaryVi.contains("Đã vượt quá số bước thao tác tối đa"))
         assertFalse("Typing must not be attempted after budget exhaustion (R4)", fakeBridge.typeCalled)
+    }
+
+    @Test
+    fun execute_whenCoroutineCancelled_terminatesImmediately() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            typed = true,
+            currentEditableText = "t-shirt"
+        )
+        val skillToCancel = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+
+        val job = launch {
+            kotlinx.coroutines.currentCoroutineContext().cancel()
+            skillToCancel.execute(request)
+        }
+        job.join()
+        assertTrue("Job must be cancelled", job.isCancelled)
+        assertFalse("Typing must not be called after cancellation (R7)", fakeBridge.typeCalled)
+    }
+
+    @Test
+    fun execute_detailPagePriceExceedsMaxPrice_failsVerification() = runBlocking {
+        val fakeBridge = FakeAccessibilityBridge(
+            available = true,
+            appForeground = true,
+            searchFocused = true,
+            typed = true,
+            currentEditableText = "t-shirt",
+            hierarchy = """
+                [#1] View bounds=(0,0,1080,2400)
+                [#2] TextView text="Bộ lọc" bounds=(50,100,200,200)
+                [#3] TextView text="Bán chạy" bounds=(220,100,400,200)
+                [#4] TextView text="Áo thun nam basic cotton" bounds=(50,300,500,450)
+                [#5] TextView text="₫99.000" bounds=(50,460,300,550)
+                [#6] TextView text="Chi tiết sản phẩm" bounds=(50,600,400,700)
+                [#7] TextView text="₫250.000" bounds=(50,710,300,800)
+            """.trimIndent()
+        )
+        val skillPriceCheck = ShopeeShoppingSkill(
+            accessibilityBridge = fakeBridge,
+            appOpener = { Pair(true, "com.shopee.vn") }
+        )
+        val request = ProductSearchRequest(query = "t-shirt", maxPrice = 100_000L)
+
+        val result = skillPriceCheck.execute(request)
+        assertEquals(TaskOutcome.FAILED, result.outcome)
+        assertTrue(result.summaryVi.contains("Không thể xác nhận đã mở trang chi tiết"))
     }
 }

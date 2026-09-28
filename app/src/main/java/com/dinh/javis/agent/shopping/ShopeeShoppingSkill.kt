@@ -15,7 +15,9 @@ import com.dinh.javis.vision.OcrBlock
 import com.dinh.javis.vision.ScreenCaptureService
 import com.dinh.javis.vision.ScreenObservationEngine
 import com.dinh.javis.vision.ScreenTargetResolver
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import java.util.regex.Pattern
 
 /**
@@ -175,8 +177,9 @@ class ShopeeShoppingSkill(
         val maxActions = request.executionLimits.maxUiActions
         val deadlineMs = request.executionLimits.maxTimeMs
 
-        // Safety guard check helper (R4)
-        fun checkGuardrails(): PolicyCheckResultInternal {
+        // Safety guard check helper (R4, R7)
+        suspend fun checkGuardrails(): PolicyCheckResultInternal {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
             val activePkg = accessibilityBridge.getActivePackageName()
             if (activePkg != SHOPEE_PACKAGE) {
                 return PolicyCheckResultInternal.Denied("Đã rời khỏi ứng dụng Shopee (hiện tại: ${activePkg ?: "Không xác định"}). Dừng tác vụ.")
