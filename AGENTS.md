@@ -64,7 +64,28 @@
   - All spoken responses passed to `Speaker.speak()` MUST be pre-processed by `TextNormalizer.stripMarkdownForSpeech()` before invoking Android `TextToSpeech.speak()`.
   - Strip Markdown formatting symbols (`**`, `*`, `###`, `` `code` ``, `\`\`\`codeblock\`\`\`, `[text](url)`, `https://...`, `- lists`, `~~strikethrough~~`) to prevent the TTS engine from pronouncing raw symbols like "sao sao", "hoa thị", or "thăng thăng".
 
+### 3.5 Plan Lifecycle, APK Delivery & Device Acceptance Rules
+- **Plan Lifecycle Transitions (`plan/pending/` -> `plan/reject/` -> `plan/completed/`)**:
+  - Plans in `plan/pending/` document active implementation proposals.
+  - Plans in `plan/reject/` capture review rejections, gap analyses, and remediation criteria.
+  - Plans MUST only be moved to `plan/completed/` when software changes, automated test suites (100% passing), debug APK assembly, and verified deliverable artifacts are validated, or upon explicit user instruction.
+- **Direct Filesystem Verification of Artifacts**:
+  - Build artifacts (`app/build/outputs/apk/debug/app-debug.apk`) are ignored by version control and may be omitted by text-indexed project searches.
+  - Agents MUST inspect the filesystem directly (via `ls -l` / `find` / `sha256sum`) and verify APK existence, file size, and SHA-256 hash. Never assume an artifact is missing based solely on an indexed file query.
+- **ADB as Debugging Bridge Only**:
+  - ADB is strictly an optional developer bridge for installation and logcat diagnostics; it is NOT an application runtime dependency.
+  - JAVIS clipboard access and operations run natively through Android framework APIs (`ClipboardManager`). The installed APK operates completely autonomously on the user's phone without requiring ADB or USB debugging.
+- **Read-Only Shopping Phone Control Guardrails**:
+  - Shopping intent routing MUST strictly enforce read-only search navigation.
+  - Prohibit any automatic cart addition, purchase execution, checkout payment, or credential/OTP entry.
+  - Enforce gated search focus, verified normalized query text, multi-signal result screen detection, and `maxUiActions` budget exhaustion checks before each physical dispatch.
+- **Voice Session Resilience & Generational Coordination**:
+  - All voice sessions MUST be managed through `VoiceSessionCoordinator` with monotonic session tokens (`currentSessionId`) to discard obsolete callbacks from superseded sessions.
+  - Enforce a 350ms rapid-tap debounce window and toggle-to-cancel behavior on active listening.
+  - Cleanly detach recognition listeners prior to recognizer destruction, and synchronize voice UI status upon `MainActivity.onResume()`.
+
 ---
+
 
 ## 4. Skills & Capabilities Framework
 

@@ -58,12 +58,14 @@ class OpenAiClient(private val preferenceManager: PreferenceManager) {
                 options = ModelOptions(temperature = 0.7, maxTokens = 150)
             )
 
-            if (response.isNotBlank()) {
+            val trimmed = response.trim()
+            val hasMeaningfulContent = trimmed.any { it.isLetterOrDigit() }
+            if (hasMeaningfulContent) {
                 chatMemory.addMessage("user", prompt)
-                chatMemory.addMessage("assistant", response)
-                return@withContext response
+                chatMemory.addMessage("assistant", trimmed)
+                return@withContext trimmed
             }
-            return@withContext "Tôi đã nghe bạn nói nhưng AI không đưa ra phản hồi phù hợp."
+            return@withContext "Tôi đã nghe bạn nói nhưng máy chủ AI phản hồi không hợp lệ."
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi ngoại lệ khi gọi AI qua OpenAiCompatibleClient: ${e.message}", e)
             val msg = e.message ?: ""

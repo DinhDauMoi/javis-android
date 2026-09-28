@@ -60,6 +60,22 @@ class MainActivity : AppCompatActivity() {
             }
             ContextCompat.startForegroundService(this, serviceIntent)
             Toast.makeText(this, "Đã kích hoạt chế độ Thị giác màn hình JAVIS", Toast.LENGTH_SHORT).show()
+
+            // Resume pending shopping request if held in memory waiting for consent
+            val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(this)
+            val pending = orchestrator.pendingShoppingRequest
+            if (pending != null) {
+                orchestrator.pendingShoppingRequest = null
+                orchestrator.executeShopping(pending)
+            }
+        } else {
+            // Consent denied or cancelled: clean up pending request without auto-approval
+            val orchestrator = com.dinh.javis.agent.AgentOrchestrator.getInstance(this)
+            val pending = orchestrator.pendingShoppingRequest
+            orchestrator.pendingShoppingRequest = null
+            if (pending != null) {
+                Toast.makeText(this, "Đã hủy cấp quyền màn hình. Không thể tự động thao tác trên Shopee.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -92,6 +108,7 @@ class MainActivity : AppCompatActivity() {
         binding.switchWakeWord.isChecked = preferenceManager.isWakeWordEnabled
         if (::hotwordManager.isInitialized) {
             hotwordManager.updateThreshold()
+            hotwordManager.refreshStatus()
         }
     }
 

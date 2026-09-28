@@ -10,5 +10,7 @@ data class ShoppingResult(
     val selectedProduct: ProductCandidate? = null,
     val inspectedCandidates: List<ProductCandidate> = emptyList(),
     val summaryVi: String,
-    val limitationsVi: String? = null
+    val limitationsVi: String? = null,
+    val executedActions: Int = 0,
+    val attemptedActions: Int = 0
 )
