@@ -9,6 +9,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -47,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var commandParser: CommandParser
     private lateinit var commandExecutor: CommandExecutor
     private var openAiClientHolder: androidx.core.util.Supplier<OpenAiClient> = androidx.core.util.Supplier { error("OpenAiClient not initialized") }
+    private val voiceRecoveryCounter = java.util.concurrent.atomic.AtomicInteger(0)
     private lateinit var chatAdapter: ChatAdapter
     private lateinit var database: AppDatabase
 
@@ -346,31 +348,49 @@ class MainActivity : AppCompatActivity() {
         binding.tvVoiceStatus.text = getString(R.string.status_processing)
 
         val command = commandParser.parse(text)
-        if (command !is Command.Unknown) {
+        // Command.AskAi is the parser's catch-all for unrecognized non-empty speech,
+        // so ASR-mangled scroll intents would otherwise bypass recovery entirely.
+        // Recovery runs on both Unknown (empty/unrecognized) and AskAi (unrecognized
+        // non-empty), then falls through to AskAi only when no scroll intent is detected.
+        val isUnrecognized = command is Command.Unknown || command is Command.AskAi
+        if (!isUnrecognized) {
             commandExecutor.execute(command)
             return
         }
 
-        // Deterministic parse could not identify intent. Attempt AI recovery
-        // using a narrow allowed-intent schema (scroll only). Falls back to
-        // Vietnamese clarification on low confidence, unsupported intent,
-        // or AI/network errors — never executes a guessed action.
+        val askAiCommand = command as? Command.AskAi
+
+        // Recover using a narrow allowed-intent schema (scroll only). Falls back to
+        // Vietnamese clarification on low confidence, unsupported intent, or AI/network
+        // errors — never executes a guessed action.
         val openAiClient = openAiClientHolder.get()
         val classifier = com.dinh.javis.voice.VoiceIntentClassifier(
             llmCall = if (openAiClient != null) { { sp, tr -> openAiClient.classifyIntent(sp, tr) } } else null,
             scope = lifecycleScope
         )
+        val recoveryToken = voiceRecoveryCounter.incrementAndGet()
         lifecycleScope.launch {
             val decision = classifier.recover(text)
+            // Discard results from a superseded voice session to avoid stale AI feedback
+            // landing after the user has started a new command.
+            if (recoveryToken != voiceRecoveryCounter.get()) {
+                Log.d("MainActivity", "Discarding stale recovery result for token=$recoveryToken")
+                return@launch
+            }
             val resolved = when (decision) {
                 is com.dinh.javis.voice.VoiceIntentClassifier.RecoveryDecision.ScrollUp ->
                     Command.ScrollUp
                 is com.dinh.javis.voice.VoiceIntentClassifier.RecoveryDecision.ScrollDown ->
                     Command.ScrollDown
                 is com.dinh.javis.voice.VoiceIntentClassifier.RecoveryDecision.Clarify -> {
-                    appendMessage(decision.messageVi, isUser = false, tag = "AI")
-                    speaker.speak(decision.messageVi)
-                    null
+                    if (askAiCommand != null) {
+                        // No scroll intent — this looks like a genuine AI question; run AskAi.
+                        askAiCommand
+                    } else {
+                        appendMessage(decision.messageVi, isUser = false, tag = "AI")
+                        speaker.speak(decision.messageVi)
+                        null
+                    }
                 }
             }
             binding.tvVoiceStatus.text = getString(R.string.status_ready)

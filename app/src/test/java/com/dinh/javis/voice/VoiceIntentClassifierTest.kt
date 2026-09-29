@@ -29,9 +29,30 @@ class VoiceIntentClassifierTest {
     @Test
     fun `ASR variant nuoc xuong is handled deterministically by parser`() = runBlocking {
         // The deterministic parser maps "nước xuống" (normalized "nuoc xuong")
-        // to ScrollDown, so recovery must NOT be invoked for that transcript.
+        // to ScrollDown, so recovery is not invoked for that transcript.
         val parser = com.dinh.javis.commands.CommandParser()
         assertEquals(Command.ScrollDown, parser.parse("nước xuống"))
+    }
+
+    @Test
+    fun `non-empty unrecognized speech returns AskAi from parser, recovery catches it`() = runBlocking {
+        // Integration contract: a phrase the deterministic parser returns as the
+        // AskAi catch-all (unrecognized non-empty speech) must still be recoverable
+        // to a scroll intent by the classifier — closing the defect where AskAi
+        // bypassed recovery entirely.
+        val parser = com.dinh.javis.commands.CommandParser()
+        // A genuinely unrecognized phrase (no known command grammar) — parser
+        // returns the AskAi catch-all for non-empty unrecognized speech.
+        val transcript = "đâu là video mới nhất"
+        val parsed = parser.parse(transcript)
+        assertTrue("expected AskAi catch-all, got $parsed", parsed is Command.AskAi)
+
+        // Even though the parser didn't classify it as a scroll, recovery should
+        // be able to redirect an intended scroll command (ASR-mangled) to a scroll.
+        val scrollIntent = "lượt xuống" // ASR mangles "lướt xuống"
+        val llm = { _: String, _: String -> """{"intent":"SCROLL_DOWN","confidence":0.9,"rationale":"down"}""" }
+        val decision = classifier(llm).recover(scrollIntent)
+        assertTrue(decision is VoiceIntentClassifier.RecoveryDecision.ScrollDown)
     }
 
     @Test
@@ -104,8 +125,29 @@ class VoiceIntentClassifierTest {
     }
 
     @Test
+    fun `confidence out of range above 1 is rejected as clarification`() = runBlocking {
+        val llm = { _: String, _: String -> """{"intent":"SCROLL_UP","confidence":1.5,"rationale":"huh"}""" }
+        val decision = classifier(llm).recover("lướt lên")
+        assertTrue(decision is VoiceIntentClassifier.RecoveryDecision.Clarify)
+    }
+
+    @Test
+    fun `confidence out of range below 0 is rejected as clarification`() = runBlocking {
+        val llm = { _: String, _: String -> """{"intent":"SCROLL_DOWN","confidence":-0.3,"rationale":"neg"}""" }
+        val decision = classifier(llm).recover("lướt xuống")
+        assertTrue(decision is VoiceIntentClassifier.RecoveryDecision.Clarify)
+    }
+
+    @Test
+    fun `missing confidence field is rejected as clarification`() = runBlocking {
+        val llm = { _: String, _: String -> """{"intent":"SCROLL_UP","rationale":"no score"}""" }
+        val decision = classifier(llm).recover("lướt lên")
+        assertTrue(decision is VoiceIntentClassifier.RecoveryDecision.Clarify)
+    }
+
+    @Test
     fun `unsupported intent SCROLL_LEFT is treated as Clarify`() = runBlocking {
-        val llm = { _: String -> """{"intent":"SCROLL_LEFT","confidence":0.95}""" }
+        val llm = { _: String, _: String -> """{"intent":"SCROLL_LEFT","confidence":0.95}""" }
         val decision = classifier(llm).recover("lướt sang trái")
         assertTrue(decision is VoiceIntentClassifier.RecoveryDecision.Clarify)
     }

@@ -82,16 +82,19 @@ class VoiceIntentClassifier(
                 val confidence = json.optDouble("confidence", 0.0)
                 val rationale = json.optString("rationale", "")
 
-                when (KnownIntent.entries.find { it.name == intentStr } ?: KnownIntent.UNKNOWN) {
+                // Validate schema: confidence must be a finite value in [0.0, 1.0].
+                val validConfidence = !confidence.isNaN() && !confidence.isInfinite() &&
+                    confidence >= 0.0 && confidence <= 1.0
+                val resolvedIntent = KnownIntent.entries.find { it.name == intentStr } ?: KnownIntent.UNKNOWN
+                val useConfidence = if (validConfidence) confidence else 0.0
+                val meetsThreshold = validConfidence && useConfidence >= minConfidence
+
+                when (resolvedIntent) {
                     KnownIntent.SCROLL_UP -> {
-                        if (confidence >= minConfidence) {
-                            return@withContext RecoveryDecision.ScrollUp(rationale)
-                        }
+                        if (meetsThreshold) return@withContext RecoveryDecision.ScrollUp(rationale)
                     }
                     KnownIntent.SCROLL_DOWN -> {
-                        if (confidence >= minConfidence) {
-                            return@withContext RecoveryDecision.ScrollDown(rationale)
-                        }
+                        if (meetsThreshold) return@withContext RecoveryDecision.ScrollDown(rationale)
                     }
                     KnownIntent.UNKNOWN -> {
                         // falls through to clarification
@@ -101,6 +104,9 @@ class VoiceIntentClassifier(
             return@withContext RecoveryDecision.Clarify(
                 "Tôi chưa chắc hiểu đúng. Bạn vui lòng nói \"lướt lên\" hoặc \"lướt xuống\" để JAVIS cuộn trang nhé."
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Propagate coroutine cancellation instead of masking it as a recoverable error.
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Recovery failed: ${e.message}")
             return@withContext RecoveryDecision.Clarify(
