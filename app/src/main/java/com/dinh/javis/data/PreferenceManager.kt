@@ -122,6 +122,17 @@ class PreferenceManager(context: Context) {
         get() = prefs.getBoolean(KEY_DEBUG_MODE_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_DEBUG_MODE_ENABLED, value).apply()
 
+    /**
+     * Developer-only toggle for voice pipeline debug capture.
+     * Persists raw wake-word mic frames to a WAV file under the app's
+     * debug media directory for offline analysis. Must never be enabled
+     * in production builds — gated by [isDebugModeEnabled] at the site
+     * of capture.
+     */
+    var isDebugAudioCaptureEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DEBUG_AUDIO_CAPTURE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEBUG_AUDIO_CAPTURE_ENABLED, value).apply()
+
     companion object {
         private const val PREF_NAME = "javis_preferences"
         private const val KEY_BASE_URL = "openai_base_url"
@@ -139,6 +150,7 @@ class PreferenceManager(context: Context) {
         private const val KEY_BEHAVIOR_ANALYTICS_ENABLED = "behavior_analytics_enabled"
         private const val KEY_AGENT_DEADLINE_SECONDS = "agent_deadline_seconds"
         private const val KEY_DEBUG_MODE_ENABLED = "debug_mode_enabled"
+    private const val KEY_DEBUG_AUDIO_CAPTURE_ENABLED = "debug_audio_capture_enabled"
 
         const val DEFAULT_KEY_ALIAS = "default_openai_key"
     }

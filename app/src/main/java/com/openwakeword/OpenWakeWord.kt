@@ -13,6 +13,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.dinh.javis.data.PreferenceManager
+import com.dinh.javis.voice.AudioDebugRecorder
 import java.nio.FloatBuffer
 import kotlin.math.sqrt
 
@@ -133,6 +135,11 @@ class OpenWakeWord private constructor(
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val debugRecorder = AudioDebugRecorder(context)
+    private val debugFrames = ShortArray(FRAME_SAMPLES)
+    @Volatile
+    private var isDebugCapturing = false
+
     fun setScoreListener(listener: OnScoreListener?) {
         this.scoreListener = listener
     }
@@ -188,6 +195,10 @@ class OpenWakeWord private constructor(
      */
     fun stop() {
         isRunning = false
+        if (isDebugCapturing) {
+            debugRecorder.stop()
+            isDebugCapturing = false
+        }
         try {
             processingThread?.join(1500)
         } catch (_: Exception) {}
@@ -205,6 +216,12 @@ class OpenWakeWord private constructor(
             embeddingSession?.close()
             melSpecSession?.close()
             ortEnv?.close()
+            if (isDebugCapturing) {
+                debugRecorder.stop()?.let { file ->
+                    notifyStatus("Debug Capture", true, "Saved to ${file.name}")
+                }
+                isDebugCapturing = false
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi giải phóng phiên ONNX", e)
         }
@@ -373,7 +390,25 @@ class OpenWakeWord private constructor(
         }
 
         val frame = ShortArray(FRAME_SAMPLES)
+        val carryBuffer = ShortArray(FRAME_SAMPLES)
+        var carryCount = 0
         var frameCounter = 0
+
+        // Developer debug capture: persist the raw mic stream to a WAV file
+        // behind the isDebugAudioCaptureEnabled toggle. Never active in production.
+        val debugEnabled = try {
+            PreferenceManager(context).isDebugAudioCaptureEnabled
+        } catch (_: Exception) {
+            false
+        }
+        if (debugEnabled) {
+            debugRecorder.start()?.let { file ->
+                notifyStatus("Debug Capture", true, "Recording to ${file.name}")
+            }
+        }
+        if (debugEnabled && debugRecorder.isRecording()) {
+            isDebugCapturing = true
+        }
 
         while (isRunning) {
             val read = audioRecord?.read(frame, 0, FRAME_SAMPLES) ?: break
@@ -381,7 +416,45 @@ class OpenWakeWord private constructor(
                 Log.w(TAG, "AudioRecord read error code: $read")
                 continue
             }
-            if (read != FRAME_SAMPLES) continue
+
+            // Debug WAV capture: write the raw samples exactly as read.
+            if (isDebugCapturing) {
+                debugRecorder.writeFrame(
+                    if (read == FRAME_SAMPLES) frame
+                    else frame.copyOfRange(0, read)
+                )
+            }
+
+            // Accumulate partial reads into a rolling frame buffer instead of
+            // discarding them. Some devices (notably OPPO/ColorOS) return fewer
+            // than FRAME_SAMPLES per call; dropping those frames causes missed
+            // wake-word detections. We carry leftover samples and prepend them
+            // on the next read only when a full frame can be assembled.
+            if (carryCount > 0) {
+                val needed = FRAME_SAMPLES - carryCount
+                if (read < needed) {
+                    System.arraycopy(frame, 0, carryBuffer, carryCount, read)
+                    carryCount += read
+                    continue
+                }
+                val leftover = read - needed
+                val leftoverTemp = if (leftover > 0) ShortArray(leftover) else null
+                if (leftover > 0) {
+                    System.arraycopy(frame, needed, leftoverTemp!!, 0, leftover)
+                }
+                System.arraycopy(frame, 0, carryBuffer, carryCount, needed)
+                System.arraycopy(carryBuffer, 0, frame, 0, FRAME_SAMPLES)
+                carryCount = leftover
+                if (leftover > 0 && leftoverTemp != null) {
+                    System.arraycopy(leftoverTemp, 0, carryBuffer, 0, leftover)
+                }
+            } else {
+                if (read < FRAME_SAMPLES) {
+                    System.arraycopy(frame, 0, carryBuffer, 0, read)
+                    carryCount = read
+                    continue
+                }
+            }
 
             // Tính năng lượng RMS của frame để theo dõi âm lượng mic
             var sumSquare = 0.0
